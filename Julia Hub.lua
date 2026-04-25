@@ -1,7 +1,3 @@
---// Julia Hub LocalScript
---// Full version with drawn bottom-right anime girl included.
---// No image assets are used for the anime girl.
-
 local GLOBAL_ENV = (typeof(getgenv) == "function" and getgenv()) or _G
 
 if GLOBAL_ENV.JuliaHubCleanup then
