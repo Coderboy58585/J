@@ -142,6 +142,7 @@ local CorrectKeys = {
 
 local Settings = {
 	ESPEnabled = true,
+	ESPMode = "Highlight",
 	CamlockEnabled = true,
 	HardLockEnabled = false,
 	ShowFOV = true,
@@ -162,6 +163,7 @@ local Settings = {
 	CamlockHoldKey = Enum.UserInputType.MouseButton2,
 	ToggleGuiKey = Enum.KeyCode.K,
 	ESPUpdateRate = 0.18,
+	FollowerCloneUpdateRate = 1 / 20,
 	FOVUpdateRate = 1 / 30,
 	CounterUpdateRate = 1.0,
 	LowEndMode = false,
@@ -371,6 +373,94 @@ local function withinDistance(root, maxDistance)
 	return (localRoot.Position - root.Position).Magnitude <= maxDistance
 end
 
+local function getDistanceFromLocal(root)
+	local localRoot = getLocalRoot()
+	if not localRoot or not root then
+		return 0
+	end
+	return math.floor((localRoot.Position - root.Position).Magnitude)
+end
+
+local function getHealthRatio(character)
+	local humanoid = getHumanoid(character)
+	if not humanoid or humanoid.MaxHealth <= 0 then
+		return 0, 0
+	end
+	return math.clamp(humanoid.Health / humanoid.MaxHealth, 0, 1), math.max(0, math.floor(humanoid.Health))
+end
+
+local function getHealthColor(ratio)
+	local red = math.floor(255 * (1 - ratio))
+	local green = math.floor(255 * ratio)
+	return Color3.fromRGB(red, green, 70)
+end
+
+local function getCharacterBox2D(character, camera)
+	if not character or not camera then
+		return nil
+	end
+
+	local root = character:FindFirstChild("HumanoidRootPart")
+		or character:FindFirstChild("UpperTorso")
+		or character:FindFirstChild("Torso")
+		or character:FindFirstChild("LowerTorso")
+	if not root or not root:IsA("BasePart") then
+		return nil
+	end
+
+	local head = character:FindFirstChild("Head")
+	local torso = character:FindFirstChild("UpperTorso")
+		or character:FindFirstChild("Torso")
+		or character:FindFirstChild("LowerTorso")
+		or root
+	local foot = character:FindFirstChild("LeftFoot")
+		or character:FindFirstChild("RightFoot")
+		or character:FindFirstChild("Left Leg")
+		or character:FindFirstChild("Right Leg")
+		or character:FindFirstChild("LeftLowerLeg")
+		or character:FindFirstChild("RightLowerLeg")
+		or root
+
+	if not torso:IsA("BasePart") or not foot:IsA("BasePart") then
+		return nil
+	end
+
+	local topSource = head and head:IsA("BasePart") and head or torso
+	local topWorld = topSource.Position + Vector3.new(0, topSource.Size.Y * 0.75, 0)
+	local bottomWorld = foot.Position - Vector3.new(0, foot.Size.Y * 0.85, 0)
+	local topPoint = camera:WorldToViewportPoint(topWorld)
+	local bottomPoint = camera:WorldToViewportPoint(bottomWorld)
+	if topPoint.Z <= 0 or bottomPoint.Z <= 0 then
+		return nil
+	end
+
+	local halfWidthStuds = math.max(torso.Size.X * 0.9, 1.35)
+	local leftPoint = camera:WorldToViewportPoint(torso.Position - torso.CFrame.RightVector * halfWidthStuds)
+	local rightPoint = camera:WorldToViewportPoint(torso.Position + torso.CFrame.RightVector * halfWidthStuds)
+	if leftPoint.Z <= 0 or rightPoint.Z <= 0 then
+		return nil
+	end
+
+	local height = math.abs(bottomPoint.Y - topPoint.Y)
+	if height < 4 then
+		return nil
+	end
+
+	local width = math.max(math.abs(rightPoint.X - leftPoint.X), height * 0.38)
+	local centerX = (leftPoint.X + rightPoint.X) * 0.5
+	local minX = centerX - (width * 0.5)
+	local maxX = centerX + (width * 0.5)
+	local minY = math.min(topPoint.Y, bottomPoint.Y)
+	local maxY = math.max(topPoint.Y, bottomPoint.Y)
+
+	local viewport = camera.ViewportSize
+	if maxX < 0 or minX > viewport.X or maxY < 0 or minY > viewport.Y then
+		return nil
+	end
+
+	return minX, minY, maxX, maxY
+end
+
 local function isVisible(targetPart)
 	if not Settings.VisibleCheck then
 		return true
@@ -463,14 +553,106 @@ local function createESP(player, screenGui)
 		Font = Enum.Font.GothamBold,
 		Parent = nameGui,
 	})
+	local boxFrame = create("Frame", {
+		Name = "BoxESP_" .. player.Name,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 110,
+		Parent = screenGui,
+	})
+	local boxOutline = create("Frame", {
+		Name = "BoxOutline",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		ZIndex = 111,
+		Parent = boxFrame,
+	})
+	local boxOutlineStroke = stroke(color, 1.5, 0)
+	boxOutlineStroke.Parent = boxOutline
+	local healthBarBack = create("Frame", {
+		Name = "HealthBarBack",
+		AnchorPoint = Vector2.new(1, 0),
+		Position = UDim2.new(0, -6, 0, 0),
+		Size = UDim2.new(0, 4, 1, 0),
+		BackgroundColor3 = Color3.fromRGB(15, 15, 15),
+		BorderSizePixel = 0,
+		ZIndex = 111,
+		Parent = boxFrame,
+	})
+	local healthBarFill = create("Frame", {
+		Name = "HealthBarFill",
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 0, 1, 0),
+		Size = UDim2.new(1, 0, 1, 0),
+		BackgroundColor3 = Theme.Good,
+		BorderSizePixel = 0,
+		ZIndex = 112,
+		Parent = healthBarBack,
+	})
+	local boxNameLabel = create("TextLabel", {
+		Name = "BoxName",
+		AnchorPoint = Vector2.new(0.5, 1),
+		Position = UDim2.new(0.5, 0, 0, -2),
+		Size = UDim2.fromOffset(180, 16),
+		BackgroundTransparency = 1,
+		Text = player.DisplayName ~= player.Name and (player.DisplayName .. " (@" .. player.Name .. ")") or player.Name,
+		TextColor3 = color,
+		TextStrokeTransparency = 0.2,
+		TextSize = 13,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 112,
+		Parent = boxFrame,
+	})
+	local distanceLabel = create("TextLabel", {
+		Name = "DistanceLabel",
+		AnchorPoint = Vector2.new(0.5, 0),
+		Position = UDim2.new(0.5, 0, 1, 2),
+		Size = UDim2.fromOffset(120, 14),
+		BackgroundTransparency = 1,
+		Text = "0m",
+		TextColor3 = Theme.Text,
+		TextStrokeTransparency = 0.25,
+		TextSize = 12,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 112,
+		Parent = boxFrame,
+	})
+	local healthLabel = create("TextLabel", {
+		Name = "HealthLabel",
+		AnchorPoint = Vector2.new(0, 0.5),
+		Position = UDim2.new(1, 6, 0.5, 0),
+		Size = UDim2.fromOffset(42, 14),
+		BackgroundTransparency = 1,
+		Text = "100",
+		TextColor3 = Theme.Good,
+		TextStrokeTransparency = 0.25,
+		TextSize = 12,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 112,
+		Parent = boxFrame,
+	})
 	State.ESPObjects[player] = {
 		Highlight = highlight,
 		NameGui = nameGui,
 		NameLabel = nameLabel,
+		BoxFrame = boxFrame,
+		BoxOutline = boxOutline,
+		BoxOutlineStroke = boxOutlineStroke,
+		HealthBarBack = healthBarBack,
+		HealthBarFill = healthBarFill,
+		BoxNameLabel = boxNameLabel,
+		DistanceLabel = distanceLabel,
+		HealthLabel = healthLabel,
 	}
 end
 
 local function updateESP()
+	local camera = State.Camera
+	local boxMode = Settings.ESPMode == "2D Box"
+	local showNames = Settings.ShowNames
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player == LocalPlayer then
 			continue
@@ -488,21 +670,56 @@ local function updateESP()
 		local shouldShow = Settings.ESPEnabled and isEnemy(player) and withinDistance(root, Settings.MaxESPDistance)
 		local color = getTeamColor(player)
 		local head = character:FindFirstChild("Head")
+		local displayName = player.DisplayName ~= player.Name and (player.DisplayName .. " (@" .. player.Name .. ")") or player.Name
 		if data.Highlight then
 			data.Highlight.Adornee = character
 			data.Highlight.FillColor = color
 			data.Highlight.OutlineColor = color
 			data.Highlight.FillTransparency = Settings.HighlightFillTransparency
 			data.Highlight.OutlineTransparency = Settings.HighlightOutlineTransparency
-			data.Highlight.Enabled = shouldShow
+			data.Highlight.Enabled = shouldShow and not boxMode
 		end
 		if data.NameGui then
 			data.NameGui.Adornee = head or root
 			data.NameGui.MaxDistance = Settings.MaxESPDistance
-			data.NameGui.Enabled = shouldShow and Settings.ShowNames
+			data.NameGui.Enabled = shouldShow and showNames and not boxMode
 		end
 		if data.NameLabel then
 			data.NameLabel.TextColor3 = color
+		end
+		if data.BoxOutlineStroke then
+			data.BoxOutlineStroke.Color = color
+		end
+		if data.BoxNameLabel then
+			data.BoxNameLabel.Text = displayName
+			data.BoxNameLabel.TextColor3 = color
+			data.BoxNameLabel.Visible = showNames
+		end
+		if data.BoxFrame then
+			local boxVisible = false
+			if shouldShow and boxMode and camera then
+				local minX, minY, maxX, maxY = getCharacterBox2D(character, camera)
+				if minX and maxX and maxY then
+					local width = math.max(18, math.floor(maxX - minX))
+					local height = math.max(30, math.floor(maxY - minY))
+					local healthRatio, healthValue = getHealthRatio(character)
+					data.BoxFrame.Position = UDim2.fromOffset(math.floor(minX), math.floor(minY))
+					data.BoxFrame.Size = UDim2.fromOffset(width, height)
+					if data.DistanceLabel then
+						data.DistanceLabel.Text = tostring(getDistanceFromLocal(root)) .. "m"
+					end
+					if data.HealthBarFill then
+						data.HealthBarFill.Size = UDim2.new(1, 0, healthRatio, 0)
+						data.HealthBarFill.BackgroundColor3 = getHealthColor(healthRatio)
+					end
+					if data.HealthLabel then
+						data.HealthLabel.Text = tostring(healthValue)
+						data.HealthLabel.TextColor3 = getHealthColor(healthRatio)
+					end
+					boxVisible = true
+				end
+			end
+			data.BoxFrame.Visible = boxVisible
 		end
 	end
 end
@@ -949,7 +1166,7 @@ local function createMainGui()
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }),
 	})
 
-	create("Frame", {
+	local headingMarker = create("Frame", {
 		Name = "HeadingMarker",
 		AnchorPoint = Vector2.new(0.5, 1),
 		Position = UDim2.fromScale(0.5, 0.5),
@@ -1191,26 +1408,44 @@ local function createMainGui()
 		blip:Destroy()
 	end
 
-	local function getRadarHeadingAngle(referencePart)
+	local worldOffsetToRadar
+
+	local function getRadarBasis(referencePart)
 		if radarConfig.UseCameraFacing then
 			local camera = Workspace.CurrentCamera
 			if camera then
 				local look = camera.CFrame.LookVector
-				return math.atan2(look.X, look.Z)
+				local flatLook = Vector3.new(look.X, 0, look.Z)
+				if flatLook.Magnitude > 0.001 then
+					local forward = flatLook.Unit
+					local right = Vector3.new(-forward.Z, 0, forward.X)
+					return forward, right
+				end
 			end
 		end
 		local look = referencePart.CFrame.LookVector
-		return math.atan2(look.X, look.Z)
+		local flatLook = Vector3.new(look.X, 0, look.Z)
+		if flatLook.Magnitude > 0.001 then
+			local forward = flatLook.Unit
+			local right = Vector3.new(-forward.Z, 0, forward.X)
+			return forward, right
+		end
+		return Vector3.new(0, 0, -1), Vector3.new(1, 0, 0)
 	end
 
-	local function worldOffsetToRadar(offset, headingAngle)
-		local sinHeading = math.sin(-headingAngle)
-		local cosHeading = math.cos(-headingAngle)
-		local rotatedX = offset.X * cosHeading - offset.Z * sinHeading
-		local rotatedY = offset.X * sinHeading + offset.Z * cosHeading
+	local function updateRadarHeadingMarker()
+		if not headingMarker then
+			return
+		end
+		headingMarker.Position = UDim2.fromScale(0.5, 0.5)
+		headingMarker.Rotation = 0
+	end
+
+	worldOffsetToRadar = function(offset, forward, right)
+		local flatOffset = Vector3.new(offset.X, 0, offset.Z)
 		local scale = radarRadius / radarConfig.Range
-		local x = rotatedX * scale
-		local y = -rotatedY * scale
+		local x = flatOffset:Dot(right) * scale
+		local y = -flatOffset:Dot(forward) * scale
 		return Vector2.new(x, y)
 	end
 
@@ -1230,7 +1465,8 @@ local function createMainGui()
 			return
 		end
 
-		local headingAngle = getRadarHeadingAngle(referencePart)
+		local radarForward, radarRight = getRadarBasis(referencePart)
+		updateRadarHeadingMarker()
 		for _, player in ipairs(Players:GetPlayers()) do
 			if player == LocalPlayer then
 				continue
@@ -1250,7 +1486,7 @@ local function createMainGui()
 				continue
 			end
 
-			local blipPosition = worldOffsetToRadar(offset, headingAngle)
+			local blipPosition = worldOffsetToRadar(offset, radarForward, radarRight)
 			local clampedDistance = math.min(blipPosition.Magnitude, radarRadius - 6)
 			local direction = blipPosition.Magnitude > 0 and blipPosition.Unit or Vector2.zero
 			local finalPosition = direction * clampedDistance
@@ -1402,13 +1638,15 @@ local function createMainGui()
 
 	local function applyPerformanceMode()
 		if Settings.LowEndMode then
-			Settings.ESPUpdateRate = 0.18
+			Settings.ESPUpdateRate = Settings.ESPMode == "2D Box" and (1 / 20) or 0.16
+			Settings.FollowerCloneUpdateRate = 1 / 15
 			Settings.FOVUpdateRate = 1 / 30
 			Settings.CounterUpdateRate = 1.0
 		else
-			Settings.ESPUpdateRate = 0.08
+			Settings.ESPUpdateRate = Settings.ESPMode == "2D Box" and (1 / 45) or 0.08
+			Settings.FollowerCloneUpdateRate = 1 / 30
 			Settings.FOVUpdateRate = 1 / 60
-			Settings.CounterUpdateRate = 0.5
+			Settings.CounterUpdateRate = 0.4
 		end
 	end
 
@@ -1509,65 +1747,72 @@ local function createMainGui()
 			for _, data in pairs(State.ESPObjects) do
 				if data.Highlight then data.Highlight.Enabled = false end
 				if data.NameGui then data.NameGui.Enabled = false end
+				if data.BoxFrame then data.BoxFrame.Visible = false end
 			end
 		end
 	end, nil, nil, nil, 1)
 
-	makeButton("Names: ON", 112, function(button)
+	makeButton("ESP Mode: Highlight", 112, function(button)
+		Settings.ESPMode = Settings.ESPMode == "Highlight" and "2D Box" or "Highlight"
+		button.Text = "ESP Mode: " .. Settings.ESPMode
+		applyPerformanceMode()
+	end, nil, nil, nil, 1)
+
+	makeButton("Names: ON", 148, function(button)
 		Settings.ShowNames = not Settings.ShowNames
 		button.Text = "Names: " .. (Settings.ShowNames and "ON" or "OFF")
 	end, nil, nil, nil, 1)
 
-	makeButton("Camlock: ON", 148, function(button)
+	makeButton("Camlock: ON", 184, function(button)
 		Settings.CamlockEnabled = not Settings.CamlockEnabled
 		button.Text = "Camlock: " .. (Settings.CamlockEnabled and "ON" or "OFF")
 	end, nil, nil, nil, 1)
 
-	makeButton("Hard Lock: OFF", 184, function(button)
+	makeButton("Hard Lock: OFF", 220, function(button)
 		Settings.HardLockEnabled = not Settings.HardLockEnabled
 		button.Text = "Hard Lock: " .. (Settings.HardLockEnabled and "ON" or "OFF")
 	end, nil, nil, nil, 1)
 
-	makeButton("Show FOV: ON", 220, function(button)
+	makeButton("Show FOV: ON", 256, function(button)
 		Settings.ShowFOV = not Settings.ShowFOV
 		fovCircle.Visible = Settings.ShowFOV
 		button.Text = "Show FOV: " .. (Settings.ShowFOV and "ON" or "OFF")
 	end, nil, nil, nil, 1)
 
-	makeButton("Team Check: ON", 256, function(button)
+	makeButton("Team Check: ON", 292, function(button)
 		Settings.TeamCheck = not Settings.TeamCheck
 		button.Text = "Team Check: " .. (Settings.TeamCheck and "ON" or "OFF")
 	end, nil, nil, nil, 1)
 
-	makeButton("Visible Check: OFF", 292, function(button)
+	makeButton("Visible Check: OFF", 328, function(button)
 		Settings.VisibleCheck = not Settings.VisibleCheck
 		button.Text = "Visible Check: " .. (Settings.VisibleCheck and "ON" or "OFF")
 	end, nil, nil, nil, 1)
 
-	makeButton("ESP Distance: " .. Settings.MaxESPDistance, 328, function(button)
+	makeButton("ESP Distance: " .. Settings.MaxESPDistance, 364, function(button)
 		Settings.MaxESPDistance = cycleDistance(Settings.MaxESPDistance)
 		button.Text = "ESP Distance: " .. Settings.MaxESPDistance
 	end, nil, nil, nil, 1)
 
-	makeButton("Aim Distance: " .. Settings.MaxAimlockDistance, 364, function(button)
+	makeButton("Aim Distance: " .. Settings.MaxAimlockDistance, 400, function(button)
 		Settings.MaxAimlockDistance = cycleDistance(Settings.MaxAimlockDistance)
 		button.Text = "Aim Distance: " .. Settings.MaxAimlockDistance
 	end, nil, nil, nil, 1)
 
-	makeButton("Aim Part: Head", 400, function(button)
+	makeButton("Aim Part: Head", 436, function(button)
 		Settings.AimPart = Settings.AimPart == "Head" and "Body" or "Head"
 		button.Text = "Aim Part: " .. Settings.AimPart
 	end, nil, nil, nil, 1)
 
-	makeButton("FOV Down", 436, function()
+	makeButton("FOV Down", 472, function()
 		Settings.FOVRadius = math.max(40, Settings.FOVRadius - 20)
 	end, 110, 10, 28, 1)
 
-	makeButton("FOV Up", 436, function()
+	makeButton("FOV Up", 472, function()
 		Settings.FOVRadius = math.min(700, Settings.FOVRadius + 20)
 	end, 110, 130, 28, 1)
 
-	makeButton("Next Page >", 480, function()
+	makeButton("Next Page >", 516, function()
 		setPage(2)
 	end, nil, nil, nil, 1)
 
@@ -1721,6 +1966,9 @@ local function createMainGui()
 	local followerCloneGaps = { 4, 6, 8, 12, 16 }
 	local followerCloneModel = nil
 	local followerCloneSource = nil
+	local followerClonePartLinks = {}
+	local followerCloneLastUpdate = 0
+	local getFollowerClonePart
 
 	local function isSpinRigReady()
 		local character = LocalPlayer.Character
@@ -1745,6 +1993,8 @@ local function createMainGui()
 			followerCloneModel = nil
 		end
 		followerCloneSource = nil
+		followerClonePartLinks = {}
+		followerCloneLastUpdate = 0
 	end
 
 	local function ensureFollowerClone()
@@ -1797,10 +2047,22 @@ local function createMainGui()
 		clone.Parent = Workspace
 		followerCloneModel = clone
 		followerCloneSource = character
+		followerClonePartLinks = {}
+		for _, sourceDescendant in ipairs(character:GetDescendants()) do
+			if sourceDescendant:IsA("BasePart") then
+				local clonePart = getFollowerClonePart(character, clone, sourceDescendant)
+				if clonePart then
+					table.insert(followerClonePartLinks, {
+						Source = sourceDescendant,
+						Clone = clonePart,
+					})
+				end
+			end
+		end
 		return clone
 	end
 
-	local function getFollowerClonePart(sourceCharacter, cloneCharacter, sourcePart)
+	getFollowerClonePart = function(sourceCharacter, cloneCharacter, sourcePart)
 		if not sourceCharacter or not cloneCharacter or not sourcePart or not sourcePart:IsA("BasePart") then
 			return nil
 		end
@@ -1829,11 +2091,16 @@ local function createMainGui()
 		return nil
 	end
 
-	local function updateFollowerClone()
+	local function updateFollowerClone(now)
 		if not followerCloneEnabled then
 			destroyFollowerClone()
 			return
 		end
+		now = now or os.clock()
+		if now - followerCloneLastUpdate < Settings.FollowerCloneUpdateRate then
+			return
+		end
+		followerCloneLastUpdate = now
 
 		local character = LocalPlayer.Character
 		local sourceRoot = getLocalSpinRoot()
@@ -1848,13 +2115,12 @@ local function createMainGui()
 		end
 
 		local targetRootCFrame = sourceRoot.CFrame * CFrame.new(0, 0, followerCloneGap)
-		for _, sourceDescendant in ipairs(character:GetDescendants()) do
-			if sourceDescendant:IsA("BasePart") then
-				local clonePart = getFollowerClonePart(character, clone, sourceDescendant)
-				if clonePart then
-					local relativeCFrame = sourceRoot.CFrame:ToObjectSpace(sourceDescendant.CFrame)
-					clonePart.CFrame = targetRootCFrame * relativeCFrame
-				end
+		for _, link in ipairs(followerClonePartLinks) do
+			local sourceDescendant = link.Source
+			local clonePart = link.Clone
+			if sourceDescendant and clonePart and sourceDescendant.Parent and clonePart.Parent then
+				local relativeCFrame = sourceRoot.CFrame:ToObjectSpace(sourceDescendant.CFrame)
+				clonePart.CFrame = targetRootCFrame * relativeCFrame
 			end
 		end
 	end
@@ -2513,7 +2779,7 @@ local function createMainGui()
 		task.wait(0.5)
 		if followerCloneEnabled then
 			destroyFollowerClone()
-			updateFollowerClone()
+			updateFollowerClone(os.clock())
 		end
 	end)
 
@@ -2621,7 +2887,9 @@ local function createMainGui()
 			end
 		end
 
-		updateFollowerClone()
+		if followerCloneEnabled or followerCloneModel then
+			updateFollowerClone(now)
+		end
 	end)
 
 	screenGui.Destroying:Connect(function()
