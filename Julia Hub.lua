@@ -1,5 +1,5 @@
 --// Julia Hub Optimized Full Script
---// Auto cleanup old loops + throttled ESP updates
+--// Auto cleanup old loops + throttled ESP updates + animated buttons
 
 local GLOBAL_ENV = (typeof(getgenv) == "function" and getgenv()) or _G
 
@@ -61,6 +61,7 @@ end
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
@@ -177,6 +178,8 @@ local Settings = {
 local Theme = {
 	Main = Color3.fromRGB(25, 25, 30),
 	Button = Color3.fromRGB(45, 45, 55),
+	ButtonHover = Color3.fromRGB(58, 58, 70),
+	ButtonClick = Color3.fromRGB(75, 75, 90),
 	Accent = Color3.fromRGB(60, 90, 160),
 	Text = Color3.fromRGB(255, 255, 255),
 	Muted = Color3.fromRGB(180, 180, 180),
@@ -223,6 +226,13 @@ local function stroke(color, thickness, transparency)
 		Thickness = thickness or 2,
 		Transparency = transparency or 0,
 	})
+end
+
+local function tween(object, time, props)
+	local info = TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local animation = TweenService:Create(object, info, props)
+	animation:Play()
+	return animation
 end
 
 local function cleanKey(text)
@@ -785,12 +795,45 @@ local function createKeyGui()
 		Text = "Submit Key",
 		TextSize = 14,
 		Font = Enum.Font.GothamBold,
+		AutoButtonColor = false,
 		Parent = frame,
 	}, {
 		corner(8),
 	})
 
 	local checking = false
+
+	submitButton.MouseEnter:Connect(function()
+		tween(submitButton, 0.12, {
+			BackgroundColor3 = Color3.fromRGB(75, 105, 180),
+			Size = UDim2.new(1, -34, 0, 40),
+			Position = UDim2.fromOffset(17, 187),
+		})
+	end)
+
+	submitButton.MouseLeave:Connect(function()
+		tween(submitButton, 0.12, {
+			BackgroundColor3 = Theme.Accent,
+			Size = UDim2.new(1, -40, 0, 38),
+			Position = UDim2.fromOffset(20, 188),
+		})
+	end)
+
+	submitButton.MouseButton1Down:Connect(function()
+		tween(submitButton, 0.07, {
+			BackgroundColor3 = Color3.fromRGB(45, 75, 145),
+			Size = UDim2.new(1, -48, 0, 34),
+			Position = UDim2.fromOffset(24, 190),
+		})
+	end)
+
+	submitButton.MouseButton1Up:Connect(function()
+		tween(submitButton, 0.1, {
+			BackgroundColor3 = Color3.fromRGB(75, 105, 180),
+			Size = UDim2.new(1, -34, 0, 40),
+			Position = UDim2.fromOffset(17, 187),
+		})
+	end)
 
 	local function checkKey()
 		if checking then
@@ -918,20 +961,74 @@ local function createMainGui()
 		Parent = panel,
 	})
 
-	local function makeButton(text, y, callback)
+	local function makeButton(text, y, callback, width, x, height)
+		local buttonWidth = width
+		local buttonX = x or 10
+		local buttonHeight = height or 30
+
+		local normalSize
+		local hoverSize
+		local clickSize
+
+		if buttonWidth then
+			normalSize = UDim2.fromOffset(buttonWidth, buttonHeight)
+			hoverSize = UDim2.fromOffset(buttonWidth + 4, buttonHeight + 2)
+			clickSize = UDim2.fromOffset(math.max(20, buttonWidth - 10), math.max(20, buttonHeight - 3))
+		else
+			normalSize = UDim2.new(1, -20, 0, buttonHeight)
+			hoverSize = UDim2.new(1, -16, 0, buttonHeight + 2)
+			clickSize = UDim2.new(1, -30, 0, math.max(20, buttonHeight - 3))
+		end
+
+		local normalPos = UDim2.fromOffset(buttonX, y)
+		local hoverPos = UDim2.fromOffset(buttonX - 2, y - 1)
+		local clickPos = UDim2.fromOffset(buttonX + 5, y + 2)
+
 		local button = create("TextButton", {
-			Size = UDim2.new(1, -20, 0, 30),
-			Position = UDim2.fromOffset(10, y),
+			Size = normalSize,
+			Position = normalPos,
 			BackgroundColor3 = Theme.Button,
 			TextColor3 = Theme.Text,
 			TextSize = 14,
 			Font = Enum.Font.Gotham,
 			Text = text,
-			AutoButtonColor = true,
+			AutoButtonColor = false,
 			Parent = panel,
 		}, {
 			corner(8),
 		})
+
+		button.MouseEnter:Connect(function()
+			tween(button, 0.12, {
+				BackgroundColor3 = Theme.ButtonHover,
+				Size = hoverSize,
+				Position = hoverPos,
+			})
+		end)
+
+		button.MouseLeave:Connect(function()
+			tween(button, 0.12, {
+				BackgroundColor3 = Theme.Button,
+				Size = normalSize,
+				Position = normalPos,
+			})
+		end)
+
+		button.MouseButton1Down:Connect(function()
+			tween(button, 0.07, {
+				BackgroundColor3 = Theme.ButtonClick,
+				Size = clickSize,
+				Position = clickPos,
+			})
+		end)
+
+		button.MouseButton1Up:Connect(function()
+			tween(button, 0.1, {
+				BackgroundColor3 = Theme.ButtonHover,
+				Size = hoverSize,
+				Position = hoverPos,
+			})
+		end)
 
 		button.MouseButton1Click:Connect(function()
 			callback(button)
@@ -998,18 +1095,13 @@ local function createMainGui()
 		button.Text = "Aim Distance: " .. Settings.MaxAimlockDistance
 	end)
 
-	local fovDown = makeButton("FOV Down", 400, function()
+	makeButton("FOV Down", 400, function()
 		Settings.FOVRadius = math.max(40, Settings.FOVRadius - 20)
-	end)
+	end, 110, 10, 28)
 
-	fovDown.Size = UDim2.fromOffset(110, 28)
-
-	local fovUp = makeButton("FOV Up", 400, function()
+	makeButton("FOV Up", 400, function()
 		Settings.FOVRadius = math.min(700, Settings.FOVRadius + 20)
-	end)
-
-	fovUp.Size = UDim2.fromOffset(110, 28)
-	fovUp.Position = UDim2.fromOffset(130, 400)
+	end, 110, 130, 28)
 
 	connect(UserInputService.InputBegan, function(input, gameProcessed)
 		if not JuliaRunning then
