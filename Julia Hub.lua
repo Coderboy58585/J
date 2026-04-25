@@ -1,3 +1,63 @@
+--// Julia Hub Optimized Full Script
+--// Auto cleanup old loops + throttled ESP updates
+
+local GLOBAL_ENV = (typeof(getgenv) == "function" and getgenv()) or _G
+
+if GLOBAL_ENV.JuliaHubCleanup then
+	pcall(GLOBAL_ENV.JuliaHubCleanup)
+end
+
+local JuliaRunning = true
+local JuliaCleaningUp = false
+local JuliaConnections = {}
+
+local function TrackConnection(connection)
+	table.insert(JuliaConnections, connection)
+	return connection
+end
+
+GLOBAL_ENV.JuliaHubCleanup = function()
+	if JuliaCleaningUp then
+		return
+	end
+
+	JuliaCleaningUp = true
+	JuliaRunning = false
+
+	for _, connection in ipairs(JuliaConnections) do
+		if connection and connection.Connected then
+			pcall(function()
+				connection:Disconnect()
+			end)
+		end
+	end
+
+	table.clear(JuliaConnections)
+
+	local Players = game:GetService("Players")
+	local LocalPlayer = Players.LocalPlayer
+
+	if LocalPlayer then
+		local PlayerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+
+		if PlayerGui then
+			for _, gui in ipairs(PlayerGui:GetChildren()) do
+				if gui.Name == "DevCamlockESP"
+					or gui.Name == "KeySystemGui"
+					or gui.Name == "JuliaHub"
+					or gui.Name == "PentagramFlash"
+					or gui.Name == "JuliaHubLite"
+					or gui.Name == "JuliaLiteFlash"
+				then
+					pcall(function()
+						gui:Destroy()
+					end)
+				end
+			end
+		end
+	end
+end
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -92,7 +152,7 @@ local Settings = {
 	ShowFOV = true,
 	ShowNames = true,
 	TeamCheck = true,
-	VisibleCheck = true,
+	VisibleCheck = false,
 
 	FOVRadius = 180,
 	AimPart = "Head",
@@ -110,6 +170,8 @@ local Settings = {
 
 	CamlockHoldKey = Enum.UserInputType.MouseButton2,
 	ToggleGuiKey = Enum.KeyCode.K,
+
+	ESPUpdateRate = 0.08,
 }
 
 local Theme = {
@@ -127,24 +189,12 @@ local State = {
 	KeyPassed = false,
 	HoldingCamlock = false,
 	ESPObjects = {},
-	Connections = {},
 	Camera = Workspace.CurrentCamera,
+	LastESPUpdate = 0,
 }
 
 local function connect(signal, callback)
-	local connection = signal:Connect(callback)
-	table.insert(State.Connections, connection)
-	return connection
-end
-
-local function cleanupConnections()
-	for _, connection in ipairs(State.Connections) do
-		if connection.Connected then
-			connection:Disconnect()
-		end
-	end
-
-	table.clear(State.Connections)
+	return TrackConnection(signal:Connect(callback))
 end
 
 local function create(className, props, children)
@@ -176,14 +226,29 @@ local function stroke(color, thickness, transparency)
 end
 
 local function cleanKey(text)
-	return tostring(text or "")
-		:gsub("%s+", "")
-		:upper()
+	text = tostring(text or "")
+
+	local result = {}
+
+	for i = 1, #text do
+		local char = text:sub(i, i)
+
+		if char ~= " " and char ~= "\t" and char ~= "\n" and char ~= "\r" then
+			table.insert(result, char)
+		end
+	end
+
+	return table.concat(result):upper()
 end
 
 local function pad2(number)
 	number = math.floor(number)
-	return number < 10 and ("0" .. number) or tostring(number)
+
+	if number < 10 then
+		return "0" .. tostring(number)
+	end
+
+	return tostring(number)
 end
 
 local function formatTimeLeft(seconds)
@@ -194,15 +259,22 @@ local function formatTimeLeft(seconds)
 	seconds = math.max(0, math.floor(seconds))
 
 	local days = math.floor(seconds / 86400)
-	seconds -= days * 86400
+	seconds = seconds - (days * 86400)
 
 	local hours = math.floor(seconds / 3600)
-	seconds -= hours * 3600
+	seconds = seconds - (hours * 3600)
 
 	local minutes = math.floor(seconds / 60)
-	seconds -= minutes * 60
+	seconds = seconds - (minutes * 60)
 
-	return string.format("%dd %sh %sm %ss", days, pad2(hours), pad2(minutes), pad2(seconds))
+	return tostring(days)
+		.. "d "
+		.. pad2(hours)
+		.. "h "
+		.. pad2(minutes)
+		.. "m "
+		.. pad2(seconds)
+		.. "s"
 end
 
 local function getTeamColor(player)
@@ -250,6 +322,10 @@ local function getCharacterPart(player, partName)
 	end
 
 	return character:FindFirstChild(partName)
+		or character:FindFirstChild("Head")
+		or character:FindFirstChild("UpperTorso")
+		or character:FindFirstChild("Torso")
+		or character:FindFirstChild("HumanoidRootPart")
 end
 
 local function getLocalRoot()
@@ -278,6 +354,12 @@ local function isVisible(targetPart)
 		return true
 	end
 
+	local targetCharacter = targetPart:FindFirstAncestorOfClass("Model")
+
+	if not targetCharacter then
+		return true
+	end
+
 	local origin = camera.CFrame.Position
 	local direction = targetPart.Position - origin
 
@@ -287,12 +369,32 @@ local function isVisible(targetPart)
 	params.IgnoreWater = true
 
 	local result = Workspace:Raycast(origin, direction, params)
-	return not result or result.Instance:IsDescendantOf(targetPart.Parent)
+
+	if not result then
+		return true
+	end
+
+	if result.Instance:IsDescendantOf(targetCharacter) then
+		return true
+	end
+
+	local hitModel = result.Instance:FindFirstAncestorOfClass("Model")
+
+	if hitModel and hitModel == targetCharacter then
+		return true
+	end
+
+	return false
 end
 
 local function cycleDistance(current)
-	current += Settings.DistanceStep
-	return current > Settings.MaximumDistance and Settings.MinimumDistance or current
+	current = current + Settings.DistanceStep
+
+	if current > Settings.MaximumDistance then
+		return Settings.MinimumDistance
+	end
+
+	return current
 end
 
 local function removeESP(player)
@@ -319,6 +421,7 @@ local function createESP(player, screenGui)
 
 	local character = player.Character
 	local root = getRoot(player)
+
 	if not character or not root then
 		return
 	end
@@ -383,6 +486,7 @@ local function updateESP()
 		end
 
 		local data = State.ESPObjects[player]
+
 		if not data then
 			continue
 		end
@@ -442,11 +546,13 @@ local function getClosestTarget()
 		end
 
 		local screenPosition, onScreen = camera:WorldToViewportPoint(part.Position)
+
 		if not onScreen then
 			continue
 		end
 
 		local distance = (Vector2.new(screenPosition.X, screenPosition.Y) - mousePosition).Magnitude
+
 		if distance < closestDistance then
 			closestDistance = distance
 			closestPart = part
@@ -458,17 +564,20 @@ end
 
 local function aimCameraAt(part)
 	local camera = State.Camera
+
 	if not camera or not part then
 		return
 	end
 
 	local smoothing = Settings.HardLockEnabled and Settings.HardLockSmoothing or Settings.SoftLockSmoothing
 	local desiredCFrame = CFrame.new(camera.CFrame.Position, part.Position)
+
 	camera.CFrame = camera.CFrame:Lerp(desiredCFrame, smoothing)
 end
 
 local function flashPentagram()
 	local old = PlayerGui:FindFirstChild("PentagramFlash")
+
 	if old then
 		old:Destroy()
 	end
@@ -544,11 +653,13 @@ local function flashPentagram()
 	}
 
 	local lines = {}
+
 	for _, pair in ipairs(starOrder) do
 		table.insert(lines, makeLine(points[pair[1]], points[pair[2]]))
 	end
 
 	local circleStroke = stroke(Theme.Red, 4, 0)
+
 	create("Frame", {
 		AnchorPoint = Vector2.new(0.5, 0.5),
 		Size = UDim2.fromOffset(180, 180),
@@ -563,6 +674,10 @@ local function flashPentagram()
 
 	task.spawn(function()
 		for _ = 1, 10 do
+			if not JuliaRunning then
+				break
+			end
+
 			title.TextTransparency = 0
 			title.TextStrokeTransparency = 0.2
 			circleStroke.Transparency = 0
@@ -584,7 +699,9 @@ local function flashPentagram()
 			task.wait(0.15)
 		end
 
-		flashGui:Destroy()
+		if flashGui then
+			flashGui:Destroy()
+		end
 	end)
 end
 
@@ -694,6 +811,7 @@ local function createKeyGui()
 		end
 
 		local now = os.time()
+
 		if keyData.Expires ~= math.huge and now >= keyData.Expires then
 			statusLabel.TextColor3 = Theme.Bad
 			statusLabel.Text = "This key has expired."
@@ -706,8 +824,10 @@ local function createKeyGui()
 		statusLabel.Text = keyData.Note .. " accepted.\nTime left: " .. formatTimeLeft(keyData.Expires == math.huge and math.huge or keyData.Expires - now)
 
 		task.wait(0.35)
+
 		keyGui.Enabled = false
 		flashPentagram()
+
 		task.wait(3)
 
 		State.KeyPassed = true
@@ -715,6 +835,7 @@ local function createKeyGui()
 	end
 
 	submitButton.MouseButton1Click:Connect(checkKey)
+
 	keyBox.FocusLost:Connect(function(enterPressed)
 		if enterPressed then
 			checkKey()
@@ -862,7 +983,7 @@ local function createMainGui()
 		button.Text = "Team Check: " .. (Settings.TeamCheck and "ON" or "OFF")
 	end)
 
-	makeButton("Visible Check: ON", 292, function(button)
+	makeButton("Visible Check: OFF", 292, function(button)
 		Settings.VisibleCheck = not Settings.VisibleCheck
 		button.Text = "Visible Check: " .. (Settings.VisibleCheck and "ON" or "OFF")
 	end)
@@ -880,15 +1001,21 @@ local function createMainGui()
 	local fovDown = makeButton("FOV Down", 400, function()
 		Settings.FOVRadius = math.max(40, Settings.FOVRadius - 20)
 	end)
+
 	fovDown.Size = UDim2.fromOffset(110, 28)
 
 	local fovUp = makeButton("FOV Up", 400, function()
 		Settings.FOVRadius = math.min(700, Settings.FOVRadius + 20)
 	end)
+
 	fovUp.Size = UDim2.fromOffset(110, 28)
 	fovUp.Position = UDim2.fromOffset(130, 400)
 
 	connect(UserInputService.InputBegan, function(input, gameProcessed)
+		if not JuliaRunning then
+			return
+		end
+
 		if gameProcessed then
 			return
 		end
@@ -901,6 +1028,10 @@ local function createMainGui()
 	end)
 
 	connect(UserInputService.InputEnded, function(input)
+		if not JuliaRunning then
+			return
+		end
+
 		if input.UserInputType == Settings.CamlockHoldKey then
 			State.HoldingCamlock = false
 		end
@@ -918,8 +1049,15 @@ local function createMainGui()
 		end
 
 		connect(player.CharacterAdded, function()
+			if not JuliaRunning then
+				return
+			end
+
 			task.wait(0.5)
-			createESP(player, screenGui)
+
+			if JuliaRunning then
+				createESP(player, screenGui)
+			end
 		end)
 	end
 
@@ -930,16 +1068,28 @@ local function createMainGui()
 	end
 
 	connect(RunService.RenderStepped, function()
+		if not JuliaRunning then
+			return
+		end
+
 		State.Camera = Workspace.CurrentCamera
-		updateESP()
+
+		local now = os.clock()
+
+		if now - State.LastESPUpdate >= Settings.ESPUpdateRate then
+			State.LastESPUpdate = now
+			updateESP()
+		end
 
 		local mousePosition = UserInputService:GetMouseLocation()
+
 		fovCircle.Size = UDim2.fromOffset(Settings.FOVRadius * 2, Settings.FOVRadius * 2)
 		fovCircle.Position = UDim2.fromOffset(mousePosition.X, mousePosition.Y)
 		fovCircle.Visible = Settings.ShowFOV
 
 		if Settings.CamlockEnabled and State.HoldingCamlock then
 			local targetPart = getClosestTarget()
+
 			if targetPart then
 				aimCameraAt(targetPart)
 			end
@@ -947,7 +1097,9 @@ local function createMainGui()
 	end)
 
 	screenGui.Destroying:Connect(function()
-		cleanupConnections()
+		if GLOBAL_ENV.JuliaHubCleanup then
+			GLOBAL_ENV.JuliaHubCleanup()
+		end
 	end)
 end
 
@@ -955,6 +1107,8 @@ createKeyGui()
 
 repeat
 	task.wait()
-until State.KeyPassed
+until State.KeyPassed or not JuliaRunning
 
-createMainGui()
+if JuliaRunning then
+	createMainGui()
+end
