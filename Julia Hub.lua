@@ -1548,6 +1548,16 @@ local function createMainGui()
 		Parent = panel,
 	})
 
+	local dragHandle = create("Frame", {
+		Name = "DragHandle",
+		Size = UDim2.new(1, 0, 0, 70),
+		Position = UDim2.fromOffset(0, 0),
+		Active = true,
+		BackgroundTransparency = 1,
+		ZIndex = 1,
+		Parent = panel,
+	})
+
 	local pageOneButtons = {}
 	local pageTwoButtons = {}
 	local pageThreeButtons = {}
@@ -1562,6 +1572,10 @@ local function createMainGui()
 	local fpsLastTime = os.clock()
 	local fpsValue = 0
 	local sliderVisuals = {}
+	local panelDragging = false
+	local panelDragStart = nil
+	local panelStartPosition = nil
+	local panelDragInput = nil
 
 	local fpsLabel = create("TextLabel", {
 		Name = "FPSCounter",
@@ -1950,6 +1964,41 @@ local function createMainGui()
 		return frame
 	end
 
+	connect(dragHandle.InputBegan, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			panelDragging = true
+			panelDragStart = input.Position
+			panelStartPosition = panel.Position
+			panelDragInput = input
+		end
+	end)
+
+	connect(dragHandle.InputChanged, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			panelDragInput = input
+		end
+	end)
+
+	connect(UserInputService.InputChanged, function(input)
+		if not panelDragging or input ~= panelDragInput or not panelDragStart or not panelStartPosition then
+			return
+		end
+		local delta = input.Position - panelDragStart
+		panel.Position = UDim2.fromOffset(
+			math.floor(panelStartPosition.X.Offset + delta.X),
+			math.floor(panelStartPosition.Y.Offset + delta.Y)
+		)
+	end)
+
+	connect(UserInputService.InputEnded, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			panelDragging = false
+			panelDragStart = nil
+			panelStartPosition = nil
+			panelDragInput = nil
+		end
+	end)
+
 	makeButton("ESP: ON", 76, function(button)
 		Settings.ESPEnabled = not Settings.ESPEnabled
 		button.Text = "ESP: " .. (Settings.ESPEnabled and "ON" or "OFF")
@@ -2011,32 +2060,32 @@ local function createMainGui()
 		Formatter = formatRangeValue,
 	})
 
-	makeButton("Aim Distance: " .. Settings.MaxAimlockDistance, 474, function(button)
+	makeButton("Aim Distance: " .. Settings.MaxAimlockDistance, 486, function(button)
 		Settings.MaxAimlockDistance = cycleDistance(Settings.MaxAimlockDistance)
 		button.Text = "Aim Distance: " .. Settings.MaxAimlockDistance
 	end, nil, nil, nil, 1)
 
-	makeButton("Aim Part: Head", 510, function(button)
+	makeButton("Aim Part: Head", 522, function(button)
 		Settings.AimPart = Settings.AimPart == "Head" and "Body" or "Head"
 		button.Text = "Aim Part: " .. Settings.AimPart
 	end, nil, nil, nil, 1)
 
-	makeButton("FOV Down", 546, function()
+	makeButton("FOV Down", 558, function()
 		Settings.FOVRadius = math.max(40, Settings.FOVRadius - 20)
 	end, 110, 10, 28, 1)
 
-	makeButton("FOV Up", 546, function()
+	makeButton("FOV Up", 558, function()
 		Settings.FOVRadius = math.min(700, Settings.FOVRadius + 20)
 	end, 110, 130, 28, 1)
 
-	makeSliderSection("Sliders", "Softlock Smoothness", 584, 0.02, 1.00, Settings.SoftLockSmoothing, function(value)
+	makeSliderSection("Sliders", "Softlock Smoothness", 596, 0.02, 1.00, Settings.SoftLockSmoothing, function(value)
 		Settings.SoftLockSmoothing = value
 	end, 1, {
 		Step = 0.01,
 		Formatter = formatSmoothingValue,
 	})
 
-	makeButton("Next Page >", 676, function()
+	makeButton("Next Page >", 688, function()
 		setPage(2)
 	end, nil, nil, nil, 1)
 
@@ -2875,7 +2924,7 @@ local function createMainGui()
 		Formatter = formatRangeValue,
 	})
 
-	makeButton("Spin: OFF", 330, function(button)
+	makeButton("Spin: OFF", 342, function(button)
 		if not isSpinRigReady() then
 			button.Text = "Spin: RIG NOT READY"
 			task.delay(1.2, function()
@@ -2889,7 +2938,7 @@ local function createMainGui()
 		button.Text = "Spin: " .. (spinEnabled and "ON" or "OFF")
 	end, nil, nil, nil, 3)
 
-	makeButton("Spin Speed: 720", 366, function(button)
+	makeButton("Spin Speed: 720", 378, function(button)
 		local currentIndex = 1
 		for i, value in ipairs(spinSpeeds) do
 			if value == spinSpeed then
@@ -2905,13 +2954,13 @@ local function createMainGui()
 		button.Text = "Spin Speed: " .. tostring(spinSpeed)
 	end, nil, nil, nil, 3)
 
-	makeButton("Low-End Mode: OFF", 402, function(button)
+	makeButton("Low-End Mode: OFF", 414, function(button)
 		Settings.LowEndMode = not Settings.LowEndMode
 		applyPerformanceMode()
 		button.Text = "Low-End Mode: " .. (Settings.LowEndMode and "ON" or "OFF")
 	end, nil, nil, nil, 3)
 
-	makeButton("Friend Notify: OFF", 438, function(button)
+	makeButton("Friend Notify: OFF", 450, function(button)
 		friendNotifierEnabled = not friendNotifierEnabled
 		button.Text = "Friend Notify: " .. (friendNotifierEnabled and "ON" or "OFF")
 		if friendNotifierEnabled then
@@ -2921,7 +2970,7 @@ local function createMainGui()
 		end
 	end, nil, nil, nil, 3)
 
-	makeButton("Follower Clone: OFF", 474, function(button)
+	makeButton("Follower Clone: OFF", 486, function(button)
 		followerCloneEnabled = not followerCloneEnabled
 		button.Text = "Follower Clone: " .. (followerCloneEnabled and "ON" or "OFF")
 		if not followerCloneEnabled then
@@ -2929,7 +2978,7 @@ local function createMainGui()
 		end
 	end, nil, nil, nil, 3)
 
-	makeButton("Clone Gap: 6", 510, function(button)
+	makeButton("Clone Gap: 6", 522, function(button)
 		local currentIndex = 1
 		for i, value in ipairs(followerCloneGaps) do
 			if value == followerCloneGap then
@@ -2945,13 +2994,13 @@ local function createMainGui()
 		button.Text = "Clone Gap: " .. tostring(followerCloneGap)
 	end, nil, nil, nil, 3)
 
-	makeButton("Anime Girl: OFF", 546, function(button)
+	makeButton("Anime Girl: OFF", 558, function(button)
 		animeGirlVisible = not animeGirlVisible
 		setAnimeGirlVisible(animeGirlVisible)
 		button.Text = "Anime Girl: " .. (animeGirlVisible and "ON" or "OFF")
 	end, nil, nil, nil, 3)
 
-	makeButton("Outfit: Default", 582, function(button)
+	makeButton("Outfit: Default", 594, function(button)
 		if outfitSwitching then
 			return
 		end
@@ -2971,7 +3020,7 @@ local function createMainGui()
 		end)
 	end, nil, nil, nil, 3)
 
-	makeButton("Back To Main", 618, function()
+	makeButton("Back To Main", 630, function()
 		setPage(1)
 	end, nil, nil, nil, 3)
 
