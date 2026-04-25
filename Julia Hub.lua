@@ -344,6 +344,13 @@ local function getCharacterPart(player, partName)
 	if not character or not isAlive(character) then
 		return nil
 	end
+	if partName == "Body" then
+		return character:FindFirstChild("UpperTorso")
+			or character:FindFirstChild("Torso")
+			or character:FindFirstChild("LowerTorso")
+			or character:FindFirstChild("HumanoidRootPart")
+			or character:FindFirstChild("Head")
+	end
 	return character:FindFirstChild(partName)
 		or character:FindFirstChild("Head")
 		or character:FindFirstChild("UpperTorso")
@@ -1547,15 +1554,20 @@ local function createMainGui()
 		button.Text = "Aim Distance: " .. Settings.MaxAimlockDistance
 	end, nil, nil, nil, 1)
 
-	makeButton("FOV Down", 400, function()
+	makeButton("Aim Part: Head", 400, function(button)
+		Settings.AimPart = Settings.AimPart == "Head" and "Body" or "Head"
+		button.Text = "Aim Part: " .. Settings.AimPart
+	end, nil, nil, nil, 1)
+
+	makeButton("FOV Down", 436, function()
 		Settings.FOVRadius = math.max(40, Settings.FOVRadius - 20)
 	end, 110, 10, 28, 1)
 
-	makeButton("FOV Up", 400, function()
+	makeButton("FOV Up", 436, function()
 		Settings.FOVRadius = math.min(700, Settings.FOVRadius + 20)
 	end, 110, 130, 28, 1)
 
-	makeButton("Next Page >", 444, function()
+	makeButton("Next Page >", 480, function()
 		setPage(2)
 	end, nil, nil, nil, 1)
 
@@ -2472,11 +2484,12 @@ local function createMainGui()
 		if not JuliaRunning then
 			return
 		end
-		if gameProcessed then
-			return
-		end
 		if input.UserInputType == Settings.CamlockHoldKey then
 			State.HoldingCamlock = true
+			return
+		end
+		if gameProcessed then
+			return
 		elseif input.KeyCode == Settings.ToggleGuiKey then
 			panel.Visible = not panel.Visible
 		end
