@@ -2,19 +2,23 @@ local GLOBAL_ENV = (typeof(getgenv) == "function" and getgenv()) or _G
 if GLOBAL_ENV.JuliaHubCleanup then
 	pcall(GLOBAL_ENV.JuliaHubCleanup)
 end
+
 local JuliaRunning = true
 local JuliaCleaningUp = false
 local JuliaConnections = {}
+
 local function TrackConnection(connection)
 	table.insert(JuliaConnections, connection)
 	return connection
 end
+
 GLOBAL_ENV.JuliaHubCleanup = function()
 	if JuliaCleaningUp then
 		return
 	end
 	JuliaCleaningUp = true
 	JuliaRunning = false
+
 	for _, connection in ipairs(JuliaConnections) do
 		if connection and connection.Connected then
 			pcall(function()
@@ -23,6 +27,7 @@ GLOBAL_ENV.JuliaHubCleanup = function()
 		end
 	end
 	table.clear(JuliaConnections)
+
 	local Players = game:GetService("Players")
 	local LocalPlayer = Players.LocalPlayer
 	if LocalPlayer then
@@ -45,6 +50,7 @@ GLOBAL_ENV.JuliaHubCleanup = function()
 		end
 	end
 end
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -53,8 +59,10 @@ local TeleportService = game:GetService("TeleportService")
 local Stats = game:GetService("Stats")
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
+
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
 local GUI_NAMES_TO_CLEAR = {
 	DevCamlockESP = true,
 	KeySystemGui = true,
@@ -62,17 +70,20 @@ local GUI_NAMES_TO_CLEAR = {
 	PentagramFlash = true,
 	RadarMinimap = true,
 }
+
 for _, gui in ipairs(PlayerGui:GetChildren()) do
 	if GUI_NAMES_TO_CLEAR[gui.Name] then
 		gui:Destroy()
 	end
 end
+
 local EXPIRY = {
 	Lifetime = math.huge,
 	Tester = 1777075200,
 	SixMonth = 1792800000,
 	OneYear = 1808524800,
 }
+
 local CorrectKeys = {
 	["TEST-1H-A8K2-QP7M"] = { Expires = EXPIRY.Tester, Note = "Tester Key #1" },
 	["TEST-1H-R4N9-ZX2C"] = { Expires = EXPIRY.Tester, Note = "Tester Key #2" },
@@ -128,6 +139,7 @@ local CorrectKeys = {
 	["6M-Z2P6-WN4Q-RC95"] = { Expires = EXPIRY.SixMonth, Note = "6 Month Key #29" },
 	["6M-A8M7-LX3T-QD51"] = { Expires = EXPIRY.SixMonth, Note = "6 Month Key #30" },
 }
+
 local Settings = {
 	ESPEnabled = true,
 	CamlockEnabled = true,
@@ -154,6 +166,7 @@ local Settings = {
 	CounterUpdateRate = 1.0,
 	LowEndMode = false,
 }
+
 local Theme = {
 	Main = Color3.fromRGB(25, 25, 30),
 	Button = Color3.fromRGB(45, 45, 55),
@@ -173,6 +186,7 @@ local Theme = {
 	WatermarkTransparency = 0.5,
 	GradientEnabled = false,
 }
+
 local State = {
 	KeyPassed = false,
 	HoldingCamlock = false,
@@ -185,9 +199,11 @@ local State = {
 	ActiveKeyNote = nil,
 	KeyExpiresAt = nil,
 }
+
 local function connect(signal, callback)
 	return TrackConnection(signal:Connect(callback))
 end
+
 local function create(className, props, children)
 	local object = Instance.new(className)
 	for property, value in pairs(props or {}) do
@@ -198,11 +214,13 @@ local function create(className, props, children)
 	end
 	return object
 end
+
 local function corner(radius)
 	return create("UICorner", {
 		CornerRadius = UDim.new(0, radius or 8),
 	})
 end
+
 local function stroke(color, thickness, transparency)
 	return create("UIStroke", {
 		Color = color or Theme.Text,
@@ -210,7 +228,9 @@ local function stroke(color, thickness, transparency)
 		Transparency = transparency or 0,
 	})
 end
+
 local ActiveTweens = {}
+
 local function tween(object, time, props)
 	if not object or not object.Parent then
 		return nil
@@ -232,6 +252,7 @@ local function tween(object, time, props)
 	animation:Play()
 	return animation
 end
+
 local function cleanKey(text)
 	text = tostring(text or "")
 	local result = {}
@@ -243,10 +264,12 @@ local function cleanKey(text)
 	end
 	return table.concat(result):upper()
 end
+
 local function pad2(number)
 	number = math.floor(number)
 	return number < 10 and ("0" .. tostring(number)) or tostring(number)
 end
+
 local function formatTimeLeft(seconds)
 	if seconds == math.huge then
 		return "Lifetime"
@@ -260,6 +283,7 @@ local function formatTimeLeft(seconds)
 	seconds = seconds - (minutes * 60)
 	return tostring(days) .. "d " .. pad2(hours) .. "h " .. pad2(minutes) .. "m " .. pad2(seconds) .. "s"
 end
+
 local function getKeyTimeLeft()
 	if not State.KeyExpiresAt then
 		return nil
@@ -269,6 +293,7 @@ local function getKeyTimeLeft()
 	end
 	return math.max(0, State.KeyExpiresAt - os.time())
 end
+
 local function getKeyTimeText()
 	local timeLeft = getKeyTimeLeft()
 	if timeLeft == nil then
@@ -279,9 +304,11 @@ local function getKeyTimeText()
 	end
 	return "KTL: " .. formatTimeLeft(timeLeft)
 end
+
 local function getTeamColor(player)
 	return player.TeamColor and player.TeamColor.Color or Theme.Text
 end
+
 local function isEnemy(player)
 	if player == LocalPlayer then
 		return false
@@ -294,13 +321,16 @@ local function isEnemy(player)
 	end
 	return true
 end
+
 local function getHumanoid(character)
 	return character and character:FindFirstChildOfClass("Humanoid") or nil
 end
+
 local function isAlive(character)
 	local humanoid = getHumanoid(character)
 	return humanoid and humanoid.Health > 0
 end
+
 local function getRoot(player)
 	local character = player.Character
 	if not character or not isAlive(character) then
@@ -308,6 +338,7 @@ local function getRoot(player)
 	end
 	return character:FindFirstChild("HumanoidRootPart")
 end
+
 local function getCharacterPart(player, partName)
 	local character = player.Character
 	if not character or not isAlive(character) then
@@ -319,10 +350,12 @@ local function getCharacterPart(player, partName)
 		or character:FindFirstChild("Torso")
 		or character:FindFirstChild("HumanoidRootPart")
 end
+
 local function getLocalRoot()
 	local character = LocalPlayer.Character
 	return character and character:FindFirstChild("HumanoidRootPart") or nil
 end
+
 local function withinDistance(root, maxDistance)
 	local localRoot = getLocalRoot()
 	if not localRoot or not root then
@@ -330,6 +363,7 @@ local function withinDistance(root, maxDistance)
 	end
 	return (localRoot.Position - root.Position).Magnitude <= maxDistance
 end
+
 local function isVisible(targetPart)
 	if not Settings.VisibleCheck then
 		return true
@@ -359,10 +393,12 @@ local function isVisible(targetPart)
 	local hitModel = result.Instance:FindFirstAncestorOfClass("Model")
 	return hitModel and hitModel == targetCharacter
 end
+
 local function cycleDistance(current)
 	current = current + Settings.DistanceStep
 	return current > Settings.MaximumDistance and Settings.MinimumDistance or current
 end
+
 local function removeESP(player)
 	local data = State.ESPObjects[player]
 	if not data then
@@ -375,6 +411,7 @@ local function removeESP(player)
 	end
 	State.ESPObjects[player] = nil
 end
+
 local function createESP(player, screenGui)
 	if player == LocalPlayer then
 		return
@@ -425,6 +462,7 @@ local function createESP(player, screenGui)
 		NameLabel = nameLabel,
 	}
 end
+
 local function updateESP()
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player == LocalPlayer then
@@ -461,6 +499,7 @@ local function updateESP()
 		end
 	end
 end
+
 local function getClosestTarget()
 	local camera = State.Camera
 	if not camera then
@@ -493,6 +532,7 @@ local function getClosestTarget()
 	end
 	return closestPart
 end
+
 local function aimCameraAt(part)
 	local camera = State.Camera
 	if not camera or not part then
@@ -502,6 +542,7 @@ local function aimCameraAt(part)
 	local desiredCFrame = CFrame.new(camera.CFrame.Position, part.Position)
 	camera.CFrame = camera.CFrame:Lerp(desiredCFrame, smoothing)
 end
+
 local function flashPentagram()
 	local old = PlayerGui:FindFirstChild("PentagramFlash")
 	if old then
@@ -605,6 +646,7 @@ local function flashPentagram()
 		end
 	end)
 end
+
 local function createKeyGui()
 	local keyGui = create("ScreenGui", {
 		Name = "KeySystemGui",
@@ -748,6 +790,7 @@ local function createKeyGui()
 		end
 	end)
 end
+
 local function createMainGui()
 	local screenGui = create("ScreenGui", {
 		Name = "JuliaHub",
@@ -755,6 +798,7 @@ local function createMainGui()
 		IgnoreGuiInset = true,
 		Parent = PlayerGui,
 	})
+
 	local watermark = create("TextLabel", {
 		Name = "Watermark",
 		AnchorPoint = Vector2.new(1, 0),
@@ -770,6 +814,7 @@ local function createMainGui()
 		ZIndex = 100,
 		Parent = screenGui,
 	}, { corner(8) })
+
 	local keyTimerLabel = create("TextLabel", {
 		Name = "KeyTimer",
 		AnchorPoint = Vector2.new(1, 0),
@@ -786,6 +831,7 @@ local function createMainGui()
 		ZIndex = 100,
 		Parent = screenGui,
 	}, { corner(8) })
+
 	local radarVisible = true
 	local radarConfig = {
 		Size = 220,
@@ -802,6 +848,7 @@ local function createMainGui()
 	local radarElapsed = 0
 	local radarRadius = radarConfig.Size * 0.5 - 16
 	local radarBlips = {}
+
 	local radarFrame = create("Frame", {
 		Name = "BasedGPTRadar",
 		AnchorPoint = Vector2.new(1, 0),
@@ -826,6 +873,7 @@ local function createMainGui()
 			PaddingRight = UDim.new(0, 10),
 		}),
 	})
+
 	local radarInner = create("Frame", {
 		Name = "Inner",
 		BackgroundTransparency = 1,
@@ -833,6 +881,7 @@ local function createMainGui()
 		ZIndex = 101,
 		Parent = radarFrame,
 	})
+
 	local function createRadarRing(scale)
 		create("Frame", {
 			Name = "Ring",
@@ -851,9 +900,11 @@ local function createMainGui()
 			}),
 		})
 	end
+
 	createRadarRing(1)
 	createRadarRing(0.66)
 	createRadarRing(0.33)
+
 	create("Frame", {
 		Name = "HorizontalLine",
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -865,6 +916,7 @@ local function createMainGui()
 		ZIndex = 101,
 		Parent = radarInner,
 	})
+
 	create("Frame", {
 		Name = "VerticalLine",
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -876,6 +928,7 @@ local function createMainGui()
 		ZIndex = 101,
 		Parent = radarInner,
 	})
+
 	create("Frame", {
 		Name = "CenterDot",
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -888,6 +941,7 @@ local function createMainGui()
 	}, {
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }),
 	})
+
 	create("Frame", {
 		Name = "HeadingMarker",
 		AnchorPoint = Vector2.new(0.5, 1),
@@ -898,10 +952,12 @@ local function createMainGui()
 		ZIndex = 102,
 		Parent = radarInner,
 	})
+
 	local radarBlipFolder = create("Folder", {
 		Name = "Blips",
 		Parent = radarInner,
 	})
+
 	local fovCircle = create("Frame", {
 		Name = "FOVCircle",
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -912,6 +968,7 @@ local function createMainGui()
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }),
 		stroke(Theme.Text, 2, 0.15),
 	})
+
 	local crosshairHolder = create("Frame", {
 		Name = "CrosshairHolder",
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -921,6 +978,7 @@ local function createMainGui()
 		ZIndex = 200,
 		Parent = screenGui,
 	})
+
 	local crosshairEnabled = false
 	local currentCrosshairIndex = 1
 	local crosshairNames = { "OFF", "Dot", "Circle", "Star", "Diamond", "Anime" }
@@ -937,11 +995,13 @@ local function createMainGui()
 		FogStart = Lighting.FogStart,
 		FogColor = Lighting.FogColor,
 	}
+
 	local function clearCrosshair()
 		for _, child in ipairs(crosshairHolder:GetChildren()) do
 			child:Destroy()
 		end
 	end
+
 	local function crossLine(name, size, position, rotation)
 		return create("Frame", {
 			Name = name,
@@ -955,6 +1015,7 @@ local function createMainGui()
 			Parent = crosshairHolder,
 		})
 	end
+
 	local function applyCrosshairStyle(index)
 		clearCrosshair()
 		crosshairHolder.Visible = crosshairEnabled
@@ -1011,6 +1072,7 @@ local function createMainGui()
 			})
 		end
 	end
+
 	local function applySkyMode()
 		if skyMode == 1 then
 			Lighting.FogEnd = 100000
@@ -1044,9 +1106,11 @@ local function createMainGui()
 			Lighting.OutdoorAmbient = Color3.fromRGB(150, 175, 205)
 		end
 	end
+
 	local function applyDayNight()
 		Lighting.ClockTime = dayMode and 14 or 0
 	end
+
 	local function applyFullbright()
 		if fullbrightEnabled then
 			Lighting.Brightness = 3
@@ -1059,6 +1123,7 @@ local function createMainGui()
 			applyDayNight()
 		end
 	end
+
 	local function getRadarCharacterRoot(player)
 		local character = player.Character
 		if not character or not isAlive(character) then
@@ -1066,6 +1131,7 @@ local function createMainGui()
 		end
 		return character:FindFirstChild("HumanoidRootPart")
 	end
+
 	local function getRadarBlipColor(otherPlayer)
 		if otherPlayer.Team ~= nil and otherPlayer.TeamColor then
 			return otherPlayer.TeamColor.Color
@@ -1081,11 +1147,13 @@ local function createMainGui()
 		end
 		return radarConfig.EnemyFallbackColor
 	end
+
 	local function getRadarBlip(player)
 		local existing = radarBlips[player]
 		if existing then
 			return existing
 		end
+
 		local blip = create("Frame", {
 			Name = player.Name .. "Blip",
 			AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1102,9 +1170,11 @@ local function createMainGui()
 				Color = Color3.fromRGB(255, 255, 255),
 			}),
 		})
+
 		radarBlips[player] = blip
 		return blip
 	end
+
 	local function removeRadarBlip(player)
 		local blip = radarBlips[player]
 		if not blip then
@@ -1113,6 +1183,7 @@ local function createMainGui()
 		radarBlips[player] = nil
 		blip:Destroy()
 	end
+
 	local function getRadarHeadingAngle(referencePart)
 		if radarConfig.UseCameraFacing then
 			local camera = Workspace.CurrentCamera
@@ -1124,6 +1195,7 @@ local function createMainGui()
 		local look = referencePart.CFrame.LookVector
 		return math.atan2(look.X, look.Z)
 	end
+
 	local function worldOffsetToRadar(offset, headingAngle)
 		local sinHeading = math.sin(-headingAngle)
 		local cosHeading = math.cos(-headingAngle)
@@ -1134,6 +1206,7 @@ local function createMainGui()
 		local y = -rotatedY * scale
 		return Vector2.new(x, y)
 	end
+
 	local function updateRadar()
 		if not radarVisible then
 			for _, blip in pairs(radarBlips) do
@@ -1141,6 +1214,7 @@ local function createMainGui()
 			end
 			return
 		end
+
 		local referencePart = getRadarCharacterRoot(LocalPlayer)
 		if not referencePart then
 			for _, blip in pairs(radarBlips) do
@@ -1148,37 +1222,44 @@ local function createMainGui()
 			end
 			return
 		end
+
 		local headingAngle = getRadarHeadingAngle(referencePart)
 		for _, player in ipairs(Players:GetPlayers()) do
 			if player == LocalPlayer then
 				continue
 			end
+
 			local blip = getRadarBlip(player)
 			local otherRoot = getRadarCharacterRoot(player)
 			if not otherRoot then
 				blip.Visible = false
 				continue
 			end
+
 			local offset = otherRoot.Position - referencePart.Position
 			local distance = Vector3.new(offset.X, 0, offset.Z).Magnitude
 			if distance > radarConfig.Range then
 				blip.Visible = false
 				continue
 			end
+
 			local blipPosition = worldOffsetToRadar(offset, headingAngle)
 			local clampedDistance = math.min(blipPosition.Magnitude, radarRadius - 6)
 			local direction = blipPosition.Magnitude > 0 and blipPosition.Unit or Vector2.zero
 			local finalPosition = direction * clampedDistance
+
 			blip.Position = UDim2.new(0.5, math.round(finalPosition.X), 0.5, math.round(finalPosition.Y))
 			blip.BackgroundColor3 = getRadarBlipColor(player)
 			blip.Visible = true
 		end
 	end
+
 	crosshairHolder.Visible = false
 	applyCrosshairStyle(currentCrosshairIndex)
+
 	local panel = create("Frame", {
 		Name = "ControlPanel",
-		Size = UDim2.fromOffset(250, 520),
+		Size = UDim2.fromOffset(250, 590),
 		Position = UDim2.fromOffset(20, 90),
 		BackgroundColor3 = Theme.Main,
 		BackgroundTransparency = Theme.PanelTransparency,
@@ -1186,6 +1267,7 @@ local function createMainGui()
 		Visible = true,
 		Parent = screenGui,
 	}, { corner(10) })
+
 	local panelGradient = create("UIGradient", {
 		Color = ColorSequence.new({
 			ColorSequenceKeypoint.new(0, Theme.GradientA),
@@ -1195,6 +1277,7 @@ local function createMainGui()
 		Enabled = Theme.GradientEnabled,
 		Parent = panel,
 	})
+
 	create("TextLabel", {
 		Size = UDim2.new(1, -20, 0, 32),
 		Position = UDim2.fromOffset(10, 8),
@@ -1206,6 +1289,7 @@ local function createMainGui()
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = panel,
 	})
+
 	create("TextLabel", {
 		Size = UDim2.new(1, -20, 0, 34),
 		Position = UDim2.fromOffset(10, 36),
@@ -1218,15 +1302,18 @@ local function createMainGui()
 		TextXAlignment = Enum.TextXAlignment.Left,
 		Parent = panel,
 	})
+
 	local pageOneButtons = {}
 	local pageTwoButtons = {}
 	local pageThreeButtons = {}
 	local activePage = 1
+
 	local fpsEnabled = false
 	local pingEnabled = false
 	local fpsFrameCount = 0
 	local fpsLastTime = os.clock()
 	local fpsValue = 0
+
 	local fpsLabel = create("TextLabel", {
 		Name = "FPSCounter",
 		AnchorPoint = Vector2.new(1, 0),
@@ -1243,6 +1330,7 @@ local function createMainGui()
 		ZIndex = 100,
 		Parent = screenGui,
 	}, { corner(8) })
+
 	local pingLabel = create("TextLabel", {
 		Name = "PingCounter",
 		AnchorPoint = Vector2.new(1, 0),
@@ -1259,6 +1347,7 @@ local function createMainGui()
 		ZIndex = 100,
 		Parent = screenGui,
 	}, { corner(8) })
+
 	local function updateTopRightLayout()
 		local nextY = 80
 		radarFrame.Visible = radarVisible
@@ -1266,14 +1355,17 @@ local function createMainGui()
 		if radarVisible then
 			nextY += radarConfig.Size + 6
 		end
+
 		fpsLabel.Position = UDim2.new(1, -12, 0, nextY)
 		fpsLabel.Visible = fpsEnabled
 		if fpsEnabled then
 			nextY += 32
 		end
+
 		pingLabel.Position = UDim2.new(1, -12, 0, nextY)
 		pingLabel.Visible = pingEnabled
 	end
+
 	local function updateStyle()
 		watermark.BackgroundColor3 = Theme.CurrentAccent
 		watermark.BackgroundTransparency = Theme.WatermarkTransparency
@@ -1300,6 +1392,7 @@ local function createMainGui()
 		end
 		applyCrosshairStyle(currentCrosshairIndex)
 	end
+
 	local function applyPerformanceMode()
 		if Settings.LowEndMode then
 			Settings.ESPUpdateRate = 0.18
@@ -1311,7 +1404,9 @@ local function createMainGui()
 			Settings.CounterUpdateRate = 0.5
 		end
 	end
+
 	applyPerformanceMode()
+
 	local function setPage(page)
 		activePage = page
 		for _, button in ipairs(pageOneButtons) do
@@ -1324,6 +1419,7 @@ local function createMainGui()
 			button.Visible = page == 3
 		end
 	end
+
 	local function makeButton(text, y, callback, width, x, height, page)
 		local buttonWidth = width
 		local buttonX = x or 10
@@ -1398,6 +1494,7 @@ local function createMainGui()
 		end)
 		return button
 	end
+
 	makeButton("ESP: ON", 76, function(button)
 		Settings.ESPEnabled = not Settings.ESPEnabled
 		button.Text = "ESP: " .. (Settings.ESPEnabled and "ON" or "OFF")
@@ -1408,48 +1505,60 @@ local function createMainGui()
 			end
 		end
 	end, nil, nil, nil, 1)
+
 	makeButton("Names: ON", 112, function(button)
 		Settings.ShowNames = not Settings.ShowNames
 		button.Text = "Names: " .. (Settings.ShowNames and "ON" or "OFF")
 	end, nil, nil, nil, 1)
+
 	makeButton("Camlock: ON", 148, function(button)
 		Settings.CamlockEnabled = not Settings.CamlockEnabled
 		button.Text = "Camlock: " .. (Settings.CamlockEnabled and "ON" or "OFF")
 	end, nil, nil, nil, 1)
+
 	makeButton("Hard Lock: OFF", 184, function(button)
 		Settings.HardLockEnabled = not Settings.HardLockEnabled
 		button.Text = "Hard Lock: " .. (Settings.HardLockEnabled and "ON" or "OFF")
 	end, nil, nil, nil, 1)
+
 	makeButton("Show FOV: ON", 220, function(button)
 		Settings.ShowFOV = not Settings.ShowFOV
 		fovCircle.Visible = Settings.ShowFOV
 		button.Text = "Show FOV: " .. (Settings.ShowFOV and "ON" or "OFF")
 	end, nil, nil, nil, 1)
+
 	makeButton("Team Check: ON", 256, function(button)
 		Settings.TeamCheck = not Settings.TeamCheck
 		button.Text = "Team Check: " .. (Settings.TeamCheck and "ON" or "OFF")
 	end, nil, nil, nil, 1)
+
 	makeButton("Visible Check: OFF", 292, function(button)
 		Settings.VisibleCheck = not Settings.VisibleCheck
 		button.Text = "Visible Check: " .. (Settings.VisibleCheck and "ON" or "OFF")
 	end, nil, nil, nil, 1)
+
 	makeButton("ESP Distance: " .. Settings.MaxESPDistance, 328, function(button)
 		Settings.MaxESPDistance = cycleDistance(Settings.MaxESPDistance)
 		button.Text = "ESP Distance: " .. Settings.MaxESPDistance
 	end, nil, nil, nil, 1)
+
 	makeButton("Aim Distance: " .. Settings.MaxAimlockDistance, 364, function(button)
 		Settings.MaxAimlockDistance = cycleDistance(Settings.MaxAimlockDistance)
 		button.Text = "Aim Distance: " .. Settings.MaxAimlockDistance
 	end, nil, nil, nil, 1)
+
 	makeButton("FOV Down", 400, function()
 		Settings.FOVRadius = math.max(40, Settings.FOVRadius - 20)
 	end, 110, 10, 28, 1)
+
 	makeButton("FOV Up", 400, function()
 		Settings.FOVRadius = math.min(700, Settings.FOVRadius + 20)
 	end, 110, 130, 28, 1)
+
 	makeButton("Next Page >", 444, function()
 		setPage(2)
 	end, nil, nil, nil, 1)
+
 	local colorIndex = 1
 	local colorPresets = {
 		{ Name = "Red", A = Color3.fromRGB(255, 40, 40), B = Color3.fromRGB(60, 90, 160) },
@@ -1458,14 +1567,17 @@ local function createMainGui()
 		{ Name = "Green", A = Color3.fromRGB(60, 220, 130), B = Color3.fromRGB(20, 110, 70) },
 		{ Name = "Pink", A = Color3.fromRGB(255, 80, 170), B = Color3.fromRGB(120, 30, 90) },
 	}
+
 	makeButton("< Main Page", 76, function()
 		setPage(1)
 	end, nil, nil, nil, 2)
+
 	makeButton("Gradient: OFF", 112, function(button)
 		Theme.GradientEnabled = not Theme.GradientEnabled
 		button.Text = "Gradient: " .. (Theme.GradientEnabled and "ON" or "OFF")
 		updateStyle()
 	end, nil, nil, nil, 2)
+
 	makeButton("Color: Red", 148, function(button)
 		colorIndex += 1
 		if colorIndex > #colorPresets then
@@ -1478,6 +1590,7 @@ local function createMainGui()
 		button.Text = "Color: " .. preset.Name
 		updateStyle()
 	end, nil, nil, nil, 2)
+
 	makeButton("Panel Transparency: 8%", 184, function(button)
 		local values = { 0.08, 0.2, 0.35, 0.5 }
 		local current = 1
@@ -1495,6 +1608,7 @@ local function createMainGui()
 		button.Text = "Panel Transparency: " .. tostring(math.floor(Theme.PanelTransparency * 100)) .. "%"
 		updateStyle()
 	end, nil, nil, nil, 2)
+
 	makeButton("Button Transparency: 0%", 220, function(button)
 		local values = { 0, 0.15, 0.3, 0.45 }
 		local current = 1
@@ -1512,6 +1626,7 @@ local function createMainGui()
 		button.Text = "Button Transparency: " .. tostring(math.floor(Theme.ButtonTransparency * 100)) .. "%"
 		updateStyle()
 	end, nil, nil, nil, 2)
+
 	makeButton("Watermark Transparency: 50%", 256, function(button)
 		local values = { 0.5, 0.35, 0.2, 0.65 }
 		local current = 1
@@ -1529,16 +1644,19 @@ local function createMainGui()
 		button.Text = "Watermark Transparency: " .. tostring(math.floor(Theme.WatermarkTransparency * 100)) .. "%"
 		updateStyle()
 	end, nil, nil, nil, 2)
+
 	makeButton("Time: Day", 292, function(button)
 		dayMode = not dayMode
 		button.Text = "Time: " .. (dayMode and "Day" or "Night")
 		applyDayNight()
 	end, nil, nil, nil, 2)
+
 	makeButton("Fullbright: OFF", 328, function(button)
 		fullbrightEnabled = not fullbrightEnabled
 		button.Text = "Fullbright: " .. (fullbrightEnabled and "ON" or "OFF")
 		applyFullbright()
 	end, nil, nil, nil, 2)
+
 	makeButton("Sky/Weather: Clear", 364, function(button)
 		skyMode += 1
 		if skyMode > #skyNames then
@@ -1551,6 +1669,7 @@ local function createMainGui()
 			applyFullbright()
 		end
 	end, nil, nil, nil, 2)
+
 	makeButton("Crosshair: OFF", 400, function(button)
 		currentCrosshairIndex += 1
 		if currentCrosshairIndex > 5 then
@@ -1561,6 +1680,7 @@ local function createMainGui()
 		button.Text = "Crosshair: " .. label
 		applyCrosshairStyle(currentCrosshairIndex)
 	end, nil, nil, nil, 2)
+
 	makeButton("Reset Style", 436, function(button)
 		Theme.CurrentAccent = Color3.fromRGB(255, 40, 40)
 		Theme.GradientA = Color3.fromRGB(255, 40, 40)
@@ -1574,11 +1694,159 @@ local function createMainGui()
 		button.Text = "Reset Style"
 		updateStyle()
 	end, nil, nil, nil, 2)
+
 	makeButton("Next Page >", 472, function()
 		setPage(3)
 	end, nil, nil, nil, 2)
+
 	local friendNotifierEnabled = false
 	local notifiedJuliaUsers = {}
+	local spinEnabled = false
+	local spinSpeed = 720
+	local spinSpeeds = { 360, 720, 1080, 1440, 5000, 10000, 25000, 50000 }
+	local followerCloneEnabled = false
+	local followerCloneGap = 6
+	local followerCloneGaps = { 4, 6, 8, 12, 16 }
+	local followerCloneModel = nil
+	local followerCloneSource = nil
+
+	local function isSpinRigReady()
+		local character = LocalPlayer.Character
+		local humanoid = getHumanoid(character)
+		return humanoid ~= nil and (
+			humanoid.RigType == Enum.HumanoidRigType.R6
+			or humanoid.RigType == Enum.HumanoidRigType.R15
+		)
+	end
+
+	local function getLocalSpinRoot()
+		local character = LocalPlayer.Character
+		if not character then
+			return nil
+		end
+		return character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso")
+	end
+
+	local function destroyFollowerClone()
+		if followerCloneModel then
+			followerCloneModel:Destroy()
+			followerCloneModel = nil
+		end
+		followerCloneSource = nil
+	end
+
+	local function ensureFollowerClone()
+		local character = LocalPlayer.Character
+		if not followerCloneEnabled or not character then
+			destroyFollowerClone()
+			return nil
+		end
+		if followerCloneModel and followerCloneSource == character and followerCloneModel.Parent then
+			return followerCloneModel
+		end
+
+		destroyFollowerClone()
+
+		local originalArchivable = character.Archivable
+		character.Archivable = true
+		local clone = character:Clone()
+		character.Archivable = originalArchivable
+		if not clone then
+			return nil
+		end
+
+		clone.Name = "JuliaFollowerClone"
+		for _, descendant in ipairs(clone:GetDescendants()) do
+			if descendant:IsA("Script") or descendant:IsA("LocalScript") or descendant:IsA("ModuleScript") then
+				descendant:Destroy()
+			elseif descendant:IsA("Humanoid") then
+				descendant.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+				descendant.HealthDisplayType = Enum.HumanoidHealthDisplayType.AlwaysOff
+				descendant.NameDisplayDistance = 0
+				descendant.BreakJointsOnDeath = false
+				descendant.AutoRotate = false
+			elseif descendant:IsA("BasePart") then
+				descendant.Anchored = true
+				descendant.CanCollide = false
+				descendant.CanTouch = false
+				descendant.CanQuery = false
+				descendant.CastShadow = false
+				descendant.Massless = true
+				descendant.Transparency = math.clamp(descendant.Transparency + 0.35, 0.35, 0.8)
+			elseif descendant:IsA("Decal") or descendant:IsA("Texture") then
+				descendant.Transparency = math.clamp(descendant.Transparency + 0.35, 0.35, 0.85)
+			elseif descendant:IsA("ParticleEmitter") or descendant:IsA("Trail") then
+				descendant.Enabled = false
+			elseif descendant:IsA("BillboardGui") or descendant:IsA("SurfaceGui") then
+				descendant.Enabled = false
+			end
+		end
+
+		clone.Parent = Workspace
+		followerCloneModel = clone
+		followerCloneSource = character
+		return clone
+	end
+
+	local function getFollowerClonePart(sourceCharacter, cloneCharacter, sourcePart)
+		if not sourceCharacter or not cloneCharacter or not sourcePart or not sourcePart:IsA("BasePart") then
+			return nil
+		end
+
+		local sourceAccessory = sourcePart:FindFirstAncestorOfClass("Accessory")
+		if sourceAccessory and sourceAccessory.Parent == sourceCharacter then
+			local cloneAccessory = cloneCharacter:FindFirstChild(sourceAccessory.Name)
+			if cloneAccessory and cloneAccessory:IsA("Accessory") then
+				local cloneAccessoryPart = cloneAccessory:FindFirstChild(sourcePart.Name)
+				if cloneAccessoryPart and cloneAccessoryPart:IsA("BasePart") then
+					return cloneAccessoryPart
+				end
+			end
+		end
+
+		local clonePart = cloneCharacter:FindFirstChild(sourcePart.Name)
+		if clonePart and clonePart:IsA("BasePart") then
+			return clonePart
+		end
+
+		local recursivePart = cloneCharacter:FindFirstChild(sourcePart.Name, true)
+		if recursivePart and recursivePart:IsA("BasePart") then
+			return recursivePart
+		end
+
+		return nil
+	end
+
+	local function updateFollowerClone()
+		if not followerCloneEnabled then
+			destroyFollowerClone()
+			return
+		end
+
+		local character = LocalPlayer.Character
+		local sourceRoot = getLocalSpinRoot()
+		if not character or not sourceRoot then
+			destroyFollowerClone()
+			return
+		end
+
+		local clone = ensureFollowerClone()
+		if not clone then
+			return
+		end
+
+		local targetRootCFrame = sourceRoot.CFrame * CFrame.new(0, 0, followerCloneGap)
+		for _, sourceDescendant in ipairs(character:GetDescendants()) do
+			if sourceDescendant:IsA("BasePart") then
+				local clonePart = getFollowerClonePart(character, clone, sourceDescendant)
+				if clonePart then
+					local relativeCFrame = sourceRoot.CFrame:ToObjectSpace(sourceDescendant.CFrame)
+					clonePart.CFrame = targetRootCFrame * relativeCFrame
+				end
+			end
+		end
+	end
+
 	local function showNotifier(title, message)
 		local note = create("TextLabel", {
 			Name = "JuliaNotifier",
@@ -1615,6 +1883,7 @@ local function createMainGui()
 			end
 		end)
 	end
+
 	local function checkFriendNotifier(player)
 		if not friendNotifierEnabled or not player or player == LocalPlayer then
 			return
@@ -1631,6 +1900,7 @@ local function createMainGui()
 			showNotifier("Julia user detected", player.DisplayName .. " appears to be using Julia features.")
 		end
 	end
+
 	local animeGirlVisible = false
 	local animeGirl = nil
 	local juliaBounceStart = os.clock()
@@ -1649,6 +1919,7 @@ local function createMainGui()
 		"Latex",
 		"Cowprint",
 	}
+
 	local function makeDrawPart(parent, name, size, position, color, zIndex, radius, rotation)
 		return create("Frame", {
 			Name = name,
@@ -1663,6 +1934,7 @@ local function createMainGui()
 			create("UICorner", { CornerRadius = radius }),
 		} or nil)
 	end
+
 	local function addJuliaBase(parent)
 		local shadow = makeDrawPart(parent, "Shadow", UDim2.fromOffset(150, 24), UDim2.fromOffset(24, 204), Color3.fromRGB(0, 0, 0), 299, UDim.new(1, 0))
 		shadow.BackgroundTransparency = 0.55
@@ -1701,6 +1973,7 @@ local function createMainGui()
 		})
 		makeDrawPart(parent, "Neck", UDim2.fromOffset(28, 24), UDim2.fromOffset(81, 144), Color3.fromRGB(245, 190, 178), 301, UDim.new(0, 8))
 	end
+
 	local function addDefaultOutfit(parent)
 		local body = makeDrawPart(parent, "Body", UDim2.fromOffset(106, 72), UDim2.fromOffset(42, 160), Color3.fromRGB(255, 80, 135), 300, UDim.new(0, 26))
 		create("UIStroke", { Color = Color3.fromRGB(150, 35, 85), Thickness = 2, Transparency = 0.1, Parent = body })
@@ -1723,6 +1996,7 @@ local function createMainGui()
 			Parent = parent,
 		})
 	end
+
 	local function addBeachOutfit(parent)
 		local leftArm = makeDrawPart(parent, "LeftArm", UDim2.fromOffset(24, 66), UDim2.fromOffset(30, 158), Color3.fromRGB(255, 214, 199), 299, UDim.new(0, 16), 10)
 		local rightArm = makeDrawPart(parent, "RightArm", UDim2.fromOffset(24, 66), UDim2.fromOffset(136, 158), Color3.fromRGB(255, 214, 199), 299, UDim.new(0, 16), -10)
@@ -1758,6 +2032,7 @@ local function createMainGui()
 			Parent = parent,
 		})
 	end
+
 	local function addPlayfulOutfit(parent)
 		local body = makeDrawPart(parent, "Body", UDim2.fromOffset(106, 72), UDim2.fromOffset(42, 160), Color3.fromRGB(245, 95, 165), 300, UDim.new(0, 26))
 		create("UIStroke", { Color = Color3.fromRGB(160, 45, 115), Thickness = 2, Transparency = 0.1, Parent = body })
@@ -1790,6 +2065,7 @@ local function createMainGui()
 			Parent = parent,
 		})
 	end
+
 	local function addMilitaryOutfit(parent)
 		local body = makeDrawPart(parent, "Body", UDim2.fromOffset(108, 78), UDim2.fromOffset(41, 158), Color3.fromRGB(72, 105, 65), 300, UDim.new(0, 24))
 		create("UIStroke", { Color = Color3.fromRGB(38, 60, 38), Thickness = 2, Transparency = 0.1, Parent = body })
@@ -1814,6 +2090,7 @@ local function createMainGui()
 			Parent = parent,
 		})
 	end
+
 	local function addInspiredOutfit(parent)
 		local coat = makeDrawPart(parent, "GreenCoat", UDim2.fromOffset(114, 80), UDim2.fromOffset(38, 156), Color3.fromRGB(55, 100, 78), 300, UDim.new(0, 20))
 		create("UIStroke", { Color = Color3.fromRGB(30, 60, 45), Thickness = 2, Transparency = 0.1, Parent = coat })
@@ -1840,6 +2117,7 @@ local function createMainGui()
 			Parent = parent,
 		})
 	end
+
 	local function addTeasingOutfit(parent)
 		local body = makeDrawPart(parent, "Body", UDim2.fromOffset(106, 72), UDim2.fromOffset(42, 160), Color3.fromRGB(220, 70, 135), 300, UDim.new(0, 26))
 		create("UIStroke", { Color = Color3.fromRGB(135, 30, 85), Thickness = 2, Transparency = 0.1, Parent = body })
@@ -1874,6 +2152,7 @@ local function createMainGui()
 			Parent = parent,
 		})
 	end
+
 	local function addMaidOutfit(parent)
 		local dress = makeDrawPart(parent, "MaidDress", UDim2.fromOffset(108, 76), UDim2.fromOffset(41, 160), Color3.fromRGB(35, 35, 45), 300, UDim.new(0, 24))
 		create("UIStroke", { Color = Color3.fromRGB(15, 15, 22), Thickness = 2, Transparency = 0.1, Parent = dress })
@@ -1899,6 +2178,7 @@ local function createMainGui()
 			Parent = parent,
 		})
 	end
+
 	local function addArmsUpOutfit(parent)
 		local torso = makeDrawPart(parent, "SleevelessTop", UDim2.fromOffset(94, 76), UDim2.fromOffset(48, 160), Color3.fromRGB(125, 80, 210), 300, UDim.new(0, 24))
 		create("UIStroke", { Color = Color3.fromRGB(70, 40, 145), Thickness = 2, Transparency = 0.1, Parent = torso })
@@ -1924,6 +2204,7 @@ local function createMainGui()
 			Parent = parent,
 		})
 	end
+
 	local function addLatexOutfit(parent)
 		local body = makeDrawPart(parent, "LatexBody", UDim2.fromOffset(106, 72), UDim2.fromOffset(42, 160), Color3.fromRGB(18, 18, 24), 300, UDim.new(0, 26))
 		create("UIStroke", {
@@ -1955,6 +2236,7 @@ local function createMainGui()
 			Parent = parent,
 		})
 	end
+
 	local function addCowprintOutfit(parent)
 		local body = makeDrawPart(parent, "CowprintTopBase", UDim2.fromOffset(106, 72), UDim2.fromOffset(42, 160), Color3.fromRGB(250, 250, 245), 300, UDim.new(0, 26))
 		create("UIStroke", {
@@ -1987,6 +2269,7 @@ local function createMainGui()
 			Parent = parent,
 		})
 	end
+
 	local function createDrawnAnimeGirl()
 		local wasVisible = animeGirlVisible
 		local oldPosition = animeGirl and animeGirl.Position or UDim2.new(1, -18, 1, -18)
@@ -2026,6 +2309,7 @@ local function createMainGui()
 			addCowprintOutfit(animeGirl)
 		end
 	end
+
 	local function setAnimeGirlVisible(enabled)
 		if not animeGirl then
 			createDrawnAnimeGirl()
@@ -2037,7 +2321,9 @@ local function createMainGui()
 			animeGirl.Position = juliaBasePosition
 		end
 	end
+
 	createDrawnAnimeGirl()
+
 	connect(RunService.Heartbeat, function()
 		if not JuliaRunning then
 			return
@@ -2047,23 +2333,28 @@ local function createMainGui()
 			animeGirl.Position = UDim2.new(1, -18, 1, -18 + bounce)
 		end
 	end)
+
 	makeButton("< Style Page", 76, function()
 		setPage(2)
 	end, nil, nil, nil, 3)
+
 	makeButton("Rejoin Server", 112, function(button)
 		button.Text = "Rejoining..."
 		TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
 	end, nil, nil, nil, 3)
+
 	makeButton("FPS Counter: OFF", 148, function(button)
 		fpsEnabled = not fpsEnabled
 		button.Text = "FPS Counter: " .. (fpsEnabled and "ON" or "OFF")
 		updateTopRightLayout()
 	end, nil, nil, nil, 3)
+
 	makeButton("Ping Counter: OFF", 184, function(button)
 		pingEnabled = not pingEnabled
 		button.Text = "Ping Counter: " .. (pingEnabled and "ON" or "OFF")
 		updateTopRightLayout()
 	end, nil, nil, nil, 3)
+
 	makeButton("Radar: ON", 220, function(button)
 		radarVisible = not radarVisible
 		button.Text = "Radar: " .. (radarVisible and "ON" or "OFF")
@@ -2074,12 +2365,44 @@ local function createMainGui()
 			end
 		end
 	end, nil, nil, nil, 3)
-	makeButton("Low-End Mode: OFF", 256, function(button)
+
+	makeButton("Spin: OFF", 256, function(button)
+		if not isSpinRigReady() then
+			button.Text = "Spin: RIG NOT READY"
+			task.delay(1.2, function()
+				if button and button.Parent then
+					button.Text = "Spin: " .. (spinEnabled and "ON" or "OFF")
+				end
+			end)
+			return
+		end
+		spinEnabled = not spinEnabled
+		button.Text = "Spin: " .. (spinEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 3)
+
+	makeButton("Spin Speed: 720", 292, function(button)
+		local currentIndex = 1
+		for i, value in ipairs(spinSpeeds) do
+			if value == spinSpeed then
+				currentIndex = i
+				break
+			end
+		end
+		currentIndex += 1
+		if currentIndex > #spinSpeeds then
+			currentIndex = 1
+		end
+		spinSpeed = spinSpeeds[currentIndex]
+		button.Text = "Spin Speed: " .. tostring(spinSpeed)
+	end, nil, nil, nil, 3)
+
+	makeButton("Low-End Mode: OFF", 328, function(button)
 		Settings.LowEndMode = not Settings.LowEndMode
 		applyPerformanceMode()
 		button.Text = "Low-End Mode: " .. (Settings.LowEndMode and "ON" or "OFF")
 	end, nil, nil, nil, 3)
-	makeButton("Friend Notify: OFF", 292, function(button)
+
+	makeButton("Friend Notify: OFF", 364, function(button)
 		friendNotifierEnabled = not friendNotifierEnabled
 		button.Text = "Friend Notify: " .. (friendNotifierEnabled and "ON" or "OFF")
 		if friendNotifierEnabled then
@@ -2088,12 +2411,38 @@ local function createMainGui()
 			end
 		end
 	end, nil, nil, nil, 3)
-	makeButton("Anime Girl: OFF", 328, function(button)
+
+	makeButton("Follower Clone: OFF", 400, function(button)
+		followerCloneEnabled = not followerCloneEnabled
+		button.Text = "Follower Clone: " .. (followerCloneEnabled and "ON" or "OFF")
+		if not followerCloneEnabled then
+			destroyFollowerClone()
+		end
+	end, nil, nil, nil, 3)
+
+	makeButton("Clone Gap: 6", 436, function(button)
+		local currentIndex = 1
+		for i, value in ipairs(followerCloneGaps) do
+			if value == followerCloneGap then
+				currentIndex = i
+				break
+			end
+		end
+		currentIndex += 1
+		if currentIndex > #followerCloneGaps then
+			currentIndex = 1
+		end
+		followerCloneGap = followerCloneGaps[currentIndex]
+		button.Text = "Clone Gap: " .. tostring(followerCloneGap)
+	end, nil, nil, nil, 3)
+
+	makeButton("Anime Girl: OFF", 472, function(button)
 		animeGirlVisible = not animeGirlVisible
 		setAnimeGirlVisible(animeGirlVisible)
 		button.Text = "Anime Girl: " .. (animeGirlVisible and "ON" or "OFF")
 	end, nil, nil, nil, 3)
-	makeButton("Outfit: Default", 364, function(button)
+
+	makeButton("Outfit: Default", 508, function(button)
 		if outfitSwitching then
 			return
 		end
@@ -2112,14 +2461,13 @@ local function createMainGui()
 			outfitSwitching = false
 		end)
 	end, nil, nil, nil, 3)
-	makeButton("Hide Anime Girl", 400, function(button)
-		setAnimeGirlVisible(false)
-		button.Text = "Hide Anime Girl"
-	end, nil, nil, nil, 3)
-	makeButton("Back To Main", 436, function()
+
+	makeButton("Back To Main", 544, function()
 		setPage(1)
 	end, nil, nil, nil, 3)
+
 	updateTopRightLayout()
+
 	connect(UserInputService.InputBegan, function(input, gameProcessed)
 		if not JuliaRunning then
 			return
@@ -2133,6 +2481,7 @@ local function createMainGui()
 			panel.Visible = not panel.Visible
 		end
 	end)
+
 	connect(UserInputService.InputEnded, function(input)
 		if not JuliaRunning then
 			return
@@ -2141,10 +2490,20 @@ local function createMainGui()
 			State.HoldingCamlock = false
 		end
 	end)
+
 	connect(Players.PlayerRemoving, function(player)
 		removeESP(player)
 		removeRadarBlip(player)
 	end)
+
+	connect(LocalPlayer.CharacterAdded, function()
+		task.wait(0.5)
+		if followerCloneEnabled then
+			destroyFollowerClone()
+			updateFollowerClone()
+		end
+	end)
+
 	local function setupPlayer(player)
 		if player == LocalPlayer then
 			return
@@ -2163,6 +2522,7 @@ local function createMainGui()
 			end
 		end)
 	end
+
 	connect(Players.PlayerAdded, function(player)
 		setupPlayer(player)
 		checkFriendNotifier(player)
@@ -2170,6 +2530,7 @@ local function createMainGui()
 			checkFriendNotifier(player)
 		end)
 	end)
+
 	for _, player in ipairs(Players:GetPlayers()) do
 		setupPlayer(player)
 		if player ~= LocalPlayer then
@@ -2178,10 +2539,12 @@ local function createMainGui()
 			end)
 		end
 	end
+
 	connect(RunService.RenderStepped, function(deltaTime)
 		if not JuliaRunning then
 			return
 		end
+
 		local now = os.clock()
 		fpsFrameCount += 1
 		if now - State.LastCounterUpdate >= Settings.CounterUpdateRate then
@@ -2201,16 +2564,20 @@ local function createMainGui()
 				pingLabel.Text = "Ping: " .. pingText
 			end
 		end
+
 		State.Camera = Workspace.CurrentCamera
+
 		if now - State.LastESPUpdate >= Settings.ESPUpdateRate then
 			State.LastESPUpdate = now
 			updateESP()
 		end
+
 		radarElapsed += deltaTime
 		if radarElapsed >= radarConfig.UpdateRate then
 			radarElapsed = 0
 			updateRadar()
 		end
+
 		if Settings.ShowFOV then
 			if now - State.LastFOVUpdate >= Settings.FOVUpdateRate then
 				State.LastFOVUpdate = now
@@ -2226,14 +2593,26 @@ local function createMainGui()
 				fovCircle.Visible = false
 			end
 		end
+
 		if Settings.CamlockEnabled and State.HoldingCamlock then
 			local targetPart = getClosestTarget()
 			if targetPart then
 				aimCameraAt(targetPart)
 			end
 		end
+
+		if spinEnabled and isSpinRigReady() then
+			local spinRoot = getLocalSpinRoot()
+			if spinRoot then
+				spinRoot.CFrame = spinRoot.CFrame * CFrame.Angles(0, math.rad(spinSpeed * deltaTime), 0)
+			end
+		end
+
+		updateFollowerClone()
 	end)
+
 	screenGui.Destroying:Connect(function()
+		destroyFollowerClone()
 		Lighting.ClockTime = originalLighting.ClockTime
 		Lighting.Brightness = originalLighting.Brightness
 		Lighting.Ambient = originalLighting.Ambient
@@ -2246,10 +2625,12 @@ local function createMainGui()
 		end
 	end)
 end
+
 createKeyGui()
 repeat
 	task.wait()
 until State.KeyPassed or not JuliaRunning
+
 if JuliaRunning then
 	createMainGui()
 end
