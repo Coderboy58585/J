@@ -154,6 +154,7 @@ local Settings = {
 	SoftLockSmoothing = 0.22,
 	HardLockSmoothing = 0.85,
 	MaxESPDistance = 5000,
+	BoxESPDistance = 5000,
 	MaxAimlockDistance = 5000,
 	DistanceStep = 500,
 	MinimumDistance = 500,
@@ -653,6 +654,7 @@ local function updateESP()
 	local camera = State.Camera
 	local boxMode = Settings.ESPMode == "2D Box"
 	local showNames = Settings.ShowNames
+	local espDistanceLimit = boxMode and Settings.BoxESPDistance or Settings.MaxESPDistance
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player == LocalPlayer then
 			continue
@@ -667,7 +669,7 @@ local function updateESP()
 		if not data then
 			continue
 		end
-		local shouldShow = Settings.ESPEnabled and isEnemy(player) and withinDistance(root, Settings.MaxESPDistance)
+		local shouldShow = Settings.ESPEnabled and isEnemy(player) and withinDistance(root, espDistanceLimit)
 		local color = getTeamColor(player)
 		local head = character:FindFirstChild("Head")
 		local displayName = player.DisplayName ~= player.Name and (player.DisplayName .. " (@" .. player.Name .. ")") or player.Name
@@ -1502,7 +1504,7 @@ local function createMainGui()
 
 	local panel = create("Frame", {
 		Name = "ControlPanel",
-		Size = UDim2.fromOffset(250, 590),
+		Size = UDim2.fromOffset(250, 760),
 		Position = UDim2.fromOffset(20, 90),
 		BackgroundColor3 = Theme.Main,
 		BackgroundTransparency = Theme.PanelTransparency,
@@ -1549,6 +1551,9 @@ local function createMainGui()
 	local pageOneButtons = {}
 	local pageTwoButtons = {}
 	local pageThreeButtons = {}
+	local pageOneDecor = {}
+	local pageTwoDecor = {}
+	local pageThreeDecor = {}
 	local activePage = 1
 
 	local fpsEnabled = false
@@ -1556,6 +1561,7 @@ local function createMainGui()
 	local fpsFrameCount = 0
 	local fpsLastTime = os.clock()
 	local fpsValue = 0
+	local sliderVisuals = {}
 
 	local fpsLabel = create("TextLabel", {
 		Name = "FPSCounter",
@@ -1634,6 +1640,44 @@ local function createMainGui()
 			end
 		end
 		applyCrosshairStyle(currentCrosshairIndex)
+		for _, sliderParts in ipairs(sliderVisuals) do
+			if sliderParts.Frame then
+				sliderParts.Frame.BackgroundColor3 = Theme.Button
+				sliderParts.Frame.BackgroundTransparency = Theme.ButtonTransparency
+			end
+			if sliderParts.Title then
+				sliderParts.Title.TextColor3 = Theme.Text
+			end
+			if sliderParts.Value then
+				sliderParts.Value.TextColor3 = Theme.CurrentAccent
+			end
+			if sliderParts.Track then
+				sliderParts.Track.BackgroundColor3 = Theme.ButtonHover
+			end
+			if sliderParts.Fill then
+				sliderParts.Fill.BackgroundColor3 = Theme.CurrentAccent
+			end
+			if sliderParts.Knob then
+				sliderParts.Knob.BackgroundColor3 = Theme.Text
+			end
+			if sliderParts.Header then
+				sliderParts.Header.TextColor3 = Theme.Text
+			end
+		end
+	end
+
+	local function registerPageDecor(instance, page)
+		if page == 3 then
+			table.insert(pageThreeDecor, instance)
+			instance.Visible = activePage == 3
+		elseif page == 2 then
+			table.insert(pageTwoDecor, instance)
+			instance.Visible = activePage == 2
+		else
+			table.insert(pageOneDecor, instance)
+			instance.Visible = activePage == 1
+		end
+		return instance
 	end
 
 	local function applyPerformanceMode()
@@ -1662,6 +1706,15 @@ local function createMainGui()
 		end
 		for _, button in ipairs(pageThreeButtons) do
 			button.Visible = page == 3
+		end
+		for _, widget in ipairs(pageOneDecor) do
+			widget.Visible = page == 1
+		end
+		for _, widget in ipairs(pageTwoDecor) do
+			widget.Visible = page == 2
+		end
+		for _, widget in ipairs(pageThreeDecor) do
+			widget.Visible = page == 3
 		end
 	end
 
@@ -1740,6 +1793,163 @@ local function createMainGui()
 		return button
 	end
 
+	local function formatSmoothingValue(value)
+		return string.format("%.2f", value)
+	end
+
+	local function formatRangeValue(value)
+		return tostring(math.floor(value + 0.5))
+	end
+
+	local function makeSliderSection(headerText, sliderText, y, minValue, maxValue, initialValue, onChanged, page, options)
+		options = options or {}
+		local stepValue = options.Step or 0.01
+		local formatter = options.Formatter or formatSmoothingValue
+		local header = registerPageDecor(create("TextLabel", {
+			Name = headerText:gsub("%s+", "") .. "Header",
+			Size = UDim2.new(1, -20, 0, 20),
+			Position = UDim2.fromOffset(10, y),
+			BackgroundTransparency = 1,
+			Text = headerText,
+			TextColor3 = Theme.Text,
+			TextSize = 14,
+			Font = Enum.Font.GothamBold,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = panel,
+		}), page)
+
+		local frame = registerPageDecor(create("Frame", {
+			Name = sliderText:gsub("%s+", "") .. "SliderFrame",
+			Size = UDim2.new(1, -20, 0, 52),
+			Position = UDim2.fromOffset(10, y + 22),
+			Active = true,
+			BackgroundColor3 = Theme.Button,
+			BackgroundTransparency = Theme.ButtonTransparency,
+			BorderSizePixel = 0,
+			Parent = panel,
+		}, { corner(8) }), page)
+
+		local titleLabel = create("TextLabel", {
+			Name = "SliderTitle",
+			Size = UDim2.new(1, -70, 0, 18),
+			Position = UDim2.fromOffset(10, 6),
+			BackgroundTransparency = 1,
+			Text = sliderText,
+			TextColor3 = Theme.Text,
+			TextSize = 13,
+			Font = Enum.Font.Gotham,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			Parent = frame,
+		})
+
+		local valueLabel = create("TextLabel", {
+			Name = "SliderValue",
+			Size = UDim2.fromOffset(54, 18),
+			Position = UDim2.new(1, -64, 0, 6),
+			BackgroundTransparency = 1,
+			Text = formatter(initialValue),
+			TextColor3 = Theme.CurrentAccent,
+			TextSize = 13,
+			Font = Enum.Font.GothamBold,
+			TextXAlignment = Enum.TextXAlignment.Right,
+			Parent = frame,
+		})
+
+		local track = create("Frame", {
+			Name = "SliderTrack",
+			Size = UDim2.new(1, -20, 0, 6),
+			Position = UDim2.fromOffset(10, 34),
+			Active = true,
+			BackgroundColor3 = Theme.ButtonHover,
+			BorderSizePixel = 0,
+			Parent = frame,
+		}, { corner(999) })
+
+		local fill = create("Frame", {
+			Name = "SliderFill",
+			Size = UDim2.new(0, 0, 1, 0),
+			BackgroundColor3 = Theme.CurrentAccent,
+			BorderSizePixel = 0,
+			Parent = track,
+		}, { corner(999) })
+
+		local knob = create("Frame", {
+			Name = "SliderKnob",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(12, 12),
+			Position = UDim2.new(0, 0, 0.5, 0),
+			Active = true,
+			BackgroundColor3 = Theme.Text,
+			BorderSizePixel = 0,
+			ZIndex = 2,
+			Parent = track,
+		}, { corner(999) })
+
+		table.insert(sliderVisuals, {
+			Header = header,
+			Frame = frame,
+			Title = titleLabel,
+			Value = valueLabel,
+			Track = track,
+			Fill = fill,
+			Knob = knob,
+		})
+
+		local dragging = false
+		local currentValue = initialValue
+
+		local function applySliderValue(value)
+			local alpha = math.clamp((value - minValue) / math.max(maxValue - minValue, 0.001), 0, 1)
+			fill.Size = UDim2.new(alpha, 0, 1, 0)
+			knob.Position = UDim2.new(alpha, 0, 0.5, 0)
+			valueLabel.Text = formatter(value)
+			currentValue = value
+			onChanged(value)
+		end
+
+		local function setValueFromInput(input)
+			local trackX = track.AbsolutePosition.X
+			local trackWidth = math.max(track.AbsoluteSize.X, 1)
+			local alpha = math.clamp((input.Position.X - trackX) / trackWidth, 0, 1)
+			local rawValue = minValue + ((maxValue - minValue) * alpha)
+			local snappedValue = math.floor((rawValue / stepValue) + 0.5) * stepValue
+			snappedValue = math.clamp(snappedValue, minValue, maxValue)
+			applySliderValue(snappedValue)
+		end
+
+		connect(track.InputBegan, function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = true
+				setValueFromInput(input)
+			end
+		end)
+
+		connect(knob.InputBegan, function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = true
+				setValueFromInput(input)
+			end
+		end)
+
+		connect(UserInputService.InputChanged, function(input)
+			if not dragging then
+				return
+			end
+			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+				setValueFromInput(input)
+			end
+		end)
+
+		connect(UserInputService.InputEnded, function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = false
+			end
+		end)
+
+		applySliderValue(currentValue)
+		return frame
+	end
+
 	makeButton("ESP: ON", 76, function(button)
 		Settings.ESPEnabled = not Settings.ESPEnabled
 		button.Text = "ESP: " .. (Settings.ESPEnabled and "ON" or "OFF")
@@ -1794,25 +2004,39 @@ local function createMainGui()
 		button.Text = "ESP Distance: " .. Settings.MaxESPDistance
 	end, nil, nil, nil, 1)
 
-	makeButton("Aim Distance: " .. Settings.MaxAimlockDistance, 400, function(button)
+	makeSliderSection("Ranges", "2D Box ESP Range", 400, 500, 10000, Settings.BoxESPDistance, function(value)
+		Settings.BoxESPDistance = value
+	end, 1, {
+		Step = 250,
+		Formatter = formatRangeValue,
+	})
+
+	makeButton("Aim Distance: " .. Settings.MaxAimlockDistance, 474, function(button)
 		Settings.MaxAimlockDistance = cycleDistance(Settings.MaxAimlockDistance)
 		button.Text = "Aim Distance: " .. Settings.MaxAimlockDistance
 	end, nil, nil, nil, 1)
 
-	makeButton("Aim Part: Head", 436, function(button)
+	makeButton("Aim Part: Head", 510, function(button)
 		Settings.AimPart = Settings.AimPart == "Head" and "Body" or "Head"
 		button.Text = "Aim Part: " .. Settings.AimPart
 	end, nil, nil, nil, 1)
 
-	makeButton("FOV Down", 472, function()
+	makeButton("FOV Down", 546, function()
 		Settings.FOVRadius = math.max(40, Settings.FOVRadius - 20)
 	end, 110, 10, 28, 1)
 
-	makeButton("FOV Up", 472, function()
+	makeButton("FOV Up", 546, function()
 		Settings.FOVRadius = math.min(700, Settings.FOVRadius + 20)
 	end, 110, 130, 28, 1)
 
-	makeButton("Next Page >", 516, function()
+	makeSliderSection("Sliders", "Softlock Smoothness", 584, 0.02, 1.00, Settings.SoftLockSmoothing, function(value)
+		Settings.SoftLockSmoothing = value
+	end, 1, {
+		Step = 0.01,
+		Formatter = formatSmoothingValue,
+	})
+
+	makeButton("Next Page >", 676, function()
 		setPage(2)
 	end, nil, nil, nil, 1)
 
@@ -2644,7 +2868,14 @@ local function createMainGui()
 		end
 	end, nil, nil, nil, 3)
 
-	makeButton("Spin: OFF", 256, function(button)
+	makeSliderSection("Ranges", "Radar Range", 256, 100, 5000, radarConfig.Range, function(value)
+		radarConfig.Range = value
+	end, 3, {
+		Step = 50,
+		Formatter = formatRangeValue,
+	})
+
+	makeButton("Spin: OFF", 330, function(button)
 		if not isSpinRigReady() then
 			button.Text = "Spin: RIG NOT READY"
 			task.delay(1.2, function()
@@ -2658,7 +2889,7 @@ local function createMainGui()
 		button.Text = "Spin: " .. (spinEnabled and "ON" or "OFF")
 	end, nil, nil, nil, 3)
 
-	makeButton("Spin Speed: 720", 292, function(button)
+	makeButton("Spin Speed: 720", 366, function(button)
 		local currentIndex = 1
 		for i, value in ipairs(spinSpeeds) do
 			if value == spinSpeed then
@@ -2674,13 +2905,13 @@ local function createMainGui()
 		button.Text = "Spin Speed: " .. tostring(spinSpeed)
 	end, nil, nil, nil, 3)
 
-	makeButton("Low-End Mode: OFF", 328, function(button)
+	makeButton("Low-End Mode: OFF", 402, function(button)
 		Settings.LowEndMode = not Settings.LowEndMode
 		applyPerformanceMode()
 		button.Text = "Low-End Mode: " .. (Settings.LowEndMode and "ON" or "OFF")
 	end, nil, nil, nil, 3)
 
-	makeButton("Friend Notify: OFF", 364, function(button)
+	makeButton("Friend Notify: OFF", 438, function(button)
 		friendNotifierEnabled = not friendNotifierEnabled
 		button.Text = "Friend Notify: " .. (friendNotifierEnabled and "ON" or "OFF")
 		if friendNotifierEnabled then
@@ -2690,7 +2921,7 @@ local function createMainGui()
 		end
 	end, nil, nil, nil, 3)
 
-	makeButton("Follower Clone: OFF", 400, function(button)
+	makeButton("Follower Clone: OFF", 474, function(button)
 		followerCloneEnabled = not followerCloneEnabled
 		button.Text = "Follower Clone: " .. (followerCloneEnabled and "ON" or "OFF")
 		if not followerCloneEnabled then
@@ -2698,7 +2929,7 @@ local function createMainGui()
 		end
 	end, nil, nil, nil, 3)
 
-	makeButton("Clone Gap: 6", 436, function(button)
+	makeButton("Clone Gap: 6", 510, function(button)
 		local currentIndex = 1
 		for i, value in ipairs(followerCloneGaps) do
 			if value == followerCloneGap then
@@ -2714,13 +2945,13 @@ local function createMainGui()
 		button.Text = "Clone Gap: " .. tostring(followerCloneGap)
 	end, nil, nil, nil, 3)
 
-	makeButton("Anime Girl: OFF", 472, function(button)
+	makeButton("Anime Girl: OFF", 546, function(button)
 		animeGirlVisible = not animeGirlVisible
 		setAnimeGirlVisible(animeGirlVisible)
 		button.Text = "Anime Girl: " .. (animeGirlVisible and "ON" or "OFF")
 	end, nil, nil, nil, 3)
 
-	makeButton("Outfit: Default", 508, function(button)
+	makeButton("Outfit: Default", 582, function(button)
 		if outfitSwitching then
 			return
 		end
@@ -2740,7 +2971,7 @@ local function createMainGui()
 		end)
 	end, nil, nil, nil, 3)
 
-	makeButton("Back To Main", 544, function()
+	makeButton("Back To Main", 618, function()
 		setPage(1)
 	end, nil, nil, nil, 3)
 
