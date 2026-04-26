@@ -29,6 +29,7 @@ GLOBAL_ENV.JuliaHubCleanup = function()
 	table.clear(JuliaConnections)
 
 	local Players = game:GetService("Players")
+	local Lighting = game:GetService("Lighting")
 	local LocalPlayer = Players.LocalPlayer
 	if LocalPlayer then
 		local PlayerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
@@ -49,6 +50,20 @@ GLOBAL_ENV.JuliaHubCleanup = function()
 			end
 		end
 	end
+	for _, effectName in ipairs({
+		"JuliaBlurFX",
+		"JuliaBloomFX",
+		"JuliaNightVisionFX",
+		"JuliaMonochromeFX",
+		"JuliaSaturationFX",
+	}) do
+		local effect = Lighting:FindFirstChild(effectName)
+		if effect then
+			pcall(function()
+				effect:Destroy()
+			end)
+		end
+	end
 end
 
 local Players = game:GetService("Players")
@@ -58,6 +73,7 @@ local TweenService = game:GetService("TweenService")
 local TeleportService = game:GetService("TeleportService")
 local Stats = game:GetService("Stats")
 local Lighting = game:GetService("Lighting")
+local VirtualUser = game:GetService("VirtualUser")
 local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
@@ -143,6 +159,11 @@ local CorrectKeys = {
 local Settings = {
 	ESPEnabled = true,
 	ESPMode = "Highlight",
+	BoneESPEnabled = false,
+	BoneThickness = 2,
+	TracersEnabled = false,
+	TracerOrigin = "Bottom",
+	TracerThickness = 1,
 	CamlockEnabled = true,
 	HardLockEnabled = false,
 	ShowFOV = true,
@@ -163,7 +184,13 @@ local Settings = {
 	HighlightOutlineTransparency = 0,
 	CamlockHoldKey = Enum.UserInputType.MouseButton2,
 	ToggleGuiKey = Enum.KeyCode.K,
+	TargetLockEnabled = true,
+	TargetLockKey = Enum.KeyCode.L,
+	TargetLockMode = "Crosshair",
+	TargetLockSticky = true,
+	TargetLockHUD = true,
 	ESPUpdateRate = 0.18,
+	LineESPUpdateRate = 1 / 45,
 	FollowerCloneUpdateRate = 1 / 20,
 	FOVUpdateRate = 1 / 30,
 	CounterUpdateRate = 1.0,
@@ -196,11 +223,13 @@ local State = {
 	ESPObjects = {},
 	Camera = Workspace.CurrentCamera,
 	LastESPUpdate = 0,
+	LastLineESPUpdate = 0,
 	LastFOVUpdate = 0,
 	LastCounterUpdate = 0,
 	ActiveKey = nil,
 	ActiveKeyNote = nil,
 	KeyExpiresAt = nil,
+	LockedTargetPlayer = nil,
 }
 
 local function connect(signal, callback)
@@ -233,6 +262,7 @@ local function stroke(color, thickness, transparency)
 end
 
 local ActiveTweens = {}
+local LineRenderCache = setmetatable({}, { __mode = "k" })
 
 local function tween(object, time, props)
 	if not object or not object.Parent then
@@ -254,6 +284,21 @@ local function tween(object, time, props)
 	end)
 	animation:Play()
 	return animation
+end
+
+local function setLineFrameVisible(line, visible)
+	if not line then
+		return
+	end
+	local state = LineRenderCache[line]
+	if not state then
+		state = {}
+		LineRenderCache[line] = state
+	end
+	if state.Visible ~= visible then
+		line.Visible = visible
+		state.Visible = visible
+	end
 end
 
 local function cleanKey(text)
@@ -396,6 +441,128 @@ local function getHealthColor(ratio)
 	return Color3.fromRGB(red, green, 70)
 end
 
+local R6BonePairs = {
+	{ "Head", "Torso" },
+	{ "Torso", "Left Arm" },
+	{ "Torso", "Right Arm" },
+	{ "Torso", "Left Leg" },
+	{ "Torso", "Right Leg" },
+}
+
+local R15BonePairs = {
+	{ "Head", "UpperTorso" },
+	{ "UpperTorso", "LowerTorso" },
+	{ "UpperTorso", "LeftUpperArm" },
+	{ "LeftUpperArm", "LeftLowerArm" },
+	{ "LeftLowerArm", "LeftHand" },
+	{ "UpperTorso", "RightUpperArm" },
+	{ "RightUpperArm", "RightLowerArm" },
+	{ "RightLowerArm", "RightHand" },
+	{ "LowerTorso", "LeftUpperLeg" },
+	{ "LeftUpperLeg", "LeftLowerLeg" },
+	{ "LeftLowerLeg", "LeftFoot" },
+	{ "LowerTorso", "RightUpperLeg" },
+	{ "RightUpperLeg", "RightLowerLeg" },
+	{ "RightLowerLeg", "RightFoot" },
+}
+
+local function getBonePairs(character)
+	local humanoid = getHumanoid(character)
+	if humanoid and humanoid.RigType == Enum.HumanoidRigType.R6 then
+		return R6BonePairs
+	end
+	return R15BonePairs
+end
+
+local function getScreenVector(camera, worldPosition)
+	local projected, onScreen = camera:WorldToViewportPoint(worldPosition)
+	if not onScreen or projected.Z <= 0 then
+		return nil
+	end
+	return Vector2.new(projected.X, projected.Y)
+end
+
+local function updateLineFrame(line, fromPoint, toPoint, color, thickness)
+	if not line or not fromPoint or not toPoint then
+		setLineFrameVisible(line, false)
+		return
+	end
+
+	local delta = toPoint - fromPoint
+	local length = delta.Magnitude
+	if length < 1 then
+		setLineFrameVisible(line, false)
+		return
+	end
+
+	local width = math.max(1, math.floor(length + 0.5))
+	local centerX = math.floor((fromPoint.X + toPoint.X) * 0.5 + 0.5)
+	local centerY = math.floor((fromPoint.Y + toPoint.Y) * 0.5 + 0.5)
+	local rotation = math.floor(math.deg(math.atan2(delta.Y, delta.X)) * 10 + 0.5) / 10
+	local state = LineRenderCache[line]
+	if not state then
+		state = {}
+		LineRenderCache[line] = state
+	end
+	if state.Width ~= width or state.Thickness ~= thickness then
+		line.Size = UDim2.fromOffset(width, thickness)
+		state.Width = width
+		state.Thickness = thickness
+	end
+	if state.CenterX ~= centerX or state.CenterY ~= centerY then
+		line.Position = UDim2.fromOffset(centerX, centerY)
+		state.CenterX = centerX
+		state.CenterY = centerY
+	end
+	if state.Rotation ~= rotation then
+		line.Rotation = rotation
+		state.Rotation = rotation
+	end
+	if state.Color ~= color then
+		line.BackgroundColor3 = color
+		state.Color = color
+	end
+	setLineFrameVisible(line, true)
+end
+
+local function hideLineFrames(lines)
+	if not lines then
+		return
+	end
+	for _, line in ipairs(lines) do
+		setLineFrameVisible(line, false)
+	end
+end
+
+local function getTracerOrigin(viewportSize)
+	if Settings.TracerOrigin == "Top" then
+		return Vector2.new(viewportSize.X * 0.5, 24)
+	elseif Settings.TracerOrigin == "Center" then
+		return Vector2.new(viewportSize.X * 0.5, viewportSize.Y * 0.5)
+	end
+	return Vector2.new(viewportSize.X * 0.5, viewportSize.Y - 28)
+end
+
+local function buildBoneSegments(character, boneLines)
+	local segments = {}
+	if not character or not boneLines then
+		return segments
+	end
+	for index, pair in ipairs(getBonePairs(character)) do
+		local fromPart = character:FindFirstChild(pair[1])
+		local toPart = character:FindFirstChild(pair[2])
+		local line = boneLines[index]
+		if line and fromPart and toPart and fromPart:IsA("BasePart") and toPart:IsA("BasePart") then
+			table.insert(segments, {
+				From = fromPart,
+				To = toPart,
+				Line = line,
+			})
+		end
+	end
+	return segments
+end
+
 local function getCharacterBox2D(character, camera)
 	if not character or not camera then
 		return nil
@@ -505,6 +672,12 @@ local function removeESP(player)
 	for _, object in pairs(data) do
 		if typeof(object) == "Instance" then
 			object:Destroy()
+		elseif type(object) == "table" then
+			for _, child in ipairs(object) do
+				if typeof(child) == "Instance" then
+					child:Destroy()
+				end
+			end
 		end
 	end
 	State.ESPObjects[player] = nil
@@ -554,6 +727,24 @@ local function createESP(player, screenGui)
 		Font = Enum.Font.GothamBold,
 		Parent = nameGui,
 	})
+	local function createOverlayLine(name, zIndex)
+		return create("Frame", {
+			Name = name,
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(0, 0),
+			BackgroundColor3 = color,
+			BorderSizePixel = 0,
+			Visible = false,
+			ZIndex = zIndex,
+			Parent = screenGui,
+		})
+	end
+	local tracerLine = createOverlayLine("TracerESP_" .. player.Name, 108)
+	local boneLines = {}
+	for index = 1, #R15BonePairs do
+		boneLines[index] = createOverlayLine("BoneESP_" .. player.Name .. "_" .. tostring(index), 109)
+	end
+	local boneSegments = buildBoneSegments(character, boneLines)
 	local boxFrame = create("Frame", {
 		Name = "BoxESP_" .. player.Name,
 		BackgroundTransparency = 1,
@@ -639,6 +830,9 @@ local function createESP(player, screenGui)
 		Highlight = highlight,
 		NameGui = nameGui,
 		NameLabel = nameLabel,
+		TracerLine = tracerLine,
+		BoneLines = boneLines,
+		BoneSegments = boneSegments,
 		BoxFrame = boxFrame,
 		BoxOutline = boxOutline,
 		BoxOutlineStroke = boxOutlineStroke,
@@ -654,7 +848,6 @@ local function updateESP()
 	local camera = State.Camera
 	local boxMode = Settings.ESPMode == "2D Box"
 	local showNames = Settings.ShowNames
-	local espDistanceLimit = boxMode and Settings.BoxESPDistance or Settings.MaxESPDistance
 	for _, player in ipairs(Players:GetPlayers()) do
 		if player == LocalPlayer then
 			continue
@@ -669,7 +862,12 @@ local function updateESP()
 		if not data then
 			continue
 		end
-		local shouldShow = Settings.ESPEnabled and isEnemy(player) and withinDistance(root, espDistanceLimit)
+		local espActive = Settings.ESPEnabled and isEnemy(player)
+		local generalShouldShow = espActive and withinDistance(root, Settings.MaxESPDistance)
+		local boxShouldShow = generalShouldShow
+		if boxMode then
+			boxShouldShow = espActive and withinDistance(root, Settings.BoxESPDistance)
+		end
 		local color = getTeamColor(player)
 		local head = character:FindFirstChild("Head")
 		local displayName = player.DisplayName ~= player.Name and (player.DisplayName .. " (@" .. player.Name .. ")") or player.Name
@@ -679,15 +877,18 @@ local function updateESP()
 			data.Highlight.OutlineColor = color
 			data.Highlight.FillTransparency = Settings.HighlightFillTransparency
 			data.Highlight.OutlineTransparency = Settings.HighlightOutlineTransparency
-			data.Highlight.Enabled = shouldShow and not boxMode
+			data.Highlight.Enabled = generalShouldShow and not boxMode
 		end
 		if data.NameGui then
 			data.NameGui.Adornee = head or root
 			data.NameGui.MaxDistance = Settings.MaxESPDistance
-			data.NameGui.Enabled = shouldShow and showNames and not boxMode
+			data.NameGui.Enabled = generalShouldShow and showNames and not boxMode
 		end
 		if data.NameLabel then
 			data.NameLabel.TextColor3 = color
+		end
+		if data.BoneLines and not Settings.BoneESPEnabled then
+			hideLineFrames(data.BoneLines)
 		end
 		if data.BoxOutlineStroke then
 			data.BoxOutlineStroke.Color = color
@@ -699,7 +900,7 @@ local function updateESP()
 		end
 		if data.BoxFrame then
 			local boxVisible = false
-			if shouldShow and boxMode and camera then
+			if boxShouldShow and boxMode and camera then
 				local minX, minY, maxX, maxY = getCharacterBox2D(character, camera)
 				if minX and maxX and maxY then
 					local width = math.max(18, math.floor(maxX - minX))
@@ -726,7 +927,124 @@ local function updateESP()
 	end
 end
 
+local function updateLineESP()
+	if not Settings.ESPEnabled then
+		return
+	end
+	local camera = State.Camera
+	if not camera then
+		for _, data in pairs(State.ESPObjects) do
+			if data.TracerLine then
+				setLineFrameVisible(data.TracerLine, false)
+			end
+			if data.BoneLines then
+				hideLineFrames(data.BoneLines)
+			end
+		end
+		return
+	end
+	local wantBones = Settings.BoneESPEnabled
+	local wantTracers = Settings.TracersEnabled
+	if not wantBones and not wantTracers then
+		return
+	end
+	local tracerOrigin = wantTracers and getTracerOrigin(camera.ViewportSize) or nil
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player == LocalPlayer then
+			continue
+		end
+		local data = State.ESPObjects[player]
+		if not data then
+			continue
+		end
+		local character = player.Character
+		local root = getRoot(player)
+		local generalShouldShow = character and root and isEnemy(player) and withinDistance(root, Settings.MaxESPDistance)
+		if not generalShouldShow then
+			if data.TracerLine then
+				setLineFrameVisible(data.TracerLine, false)
+			end
+			if data.BoneLines then
+				hideLineFrames(data.BoneLines)
+			end
+			continue
+		end
+
+		local color = getTeamColor(player)
+		local head = character:FindFirstChild("Head")
+		local partScreenCache = {}
+		local function getCachedPoint(part)
+			if not part or not part:IsA("BasePart") then
+				return nil
+			end
+			local cached = partScreenCache[part]
+			if cached ~= nil then
+				return cached or nil
+			end
+			local point = getScreenVector(camera, part.Position)
+			partScreenCache[part] = point or false
+			return point
+		end
+
+		if wantTracers and data.TracerLine then
+			local tracerPoint = getCachedPoint(head) or getCachedPoint(root)
+			if tracerPoint then
+				updateLineFrame(data.TracerLine, tracerOrigin, tracerPoint, color, Settings.TracerThickness)
+			else
+				setLineFrameVisible(data.TracerLine, false)
+			end
+		elseif data.TracerLine then
+			setLineFrameVisible(data.TracerLine, false)
+		end
+
+		if wantBones and data.BoneSegments then
+			local anyVisible = false
+			local usedBoneLines = {}
+			for _, segment in ipairs(data.BoneSegments) do
+				usedBoneLines[segment.Line] = true
+				local fromPoint = getCachedPoint(segment.From)
+				local toPoint = getCachedPoint(segment.To)
+				if fromPoint and toPoint then
+					updateLineFrame(segment.Line, fromPoint, toPoint, color, Settings.BoneThickness)
+					anyVisible = true
+				else
+					setLineFrameVisible(segment.Line, false)
+				end
+			end
+			if data.BoneLines then
+				for _, line in ipairs(data.BoneLines) do
+					if not usedBoneLines[line] then
+						setLineFrameVisible(line, false)
+					end
+				end
+				if not anyVisible then
+					hideLineFrames(data.BoneLines)
+				end
+			end
+		elseif data.BoneLines then
+			hideLineFrames(data.BoneLines)
+		end
+	end
+end
+
 local function getClosestTarget()
+	local lockedTargetPlayer = Settings.TargetLockEnabled and State.LockedTargetPlayer or nil
+	if lockedTargetPlayer then
+		local lockedPart = getCharacterPart(lockedTargetPlayer, Settings.AimPart)
+		local lockedRoot = getRoot(lockedTargetPlayer)
+		if lockedPart and lockedRoot and isEnemy(lockedTargetPlayer) then
+			local withinAimRange = withinDistance(lockedRoot, Settings.MaxAimlockDistance)
+			local visibleForLock = not Settings.VisibleCheck or isVisible(lockedPart)
+			if withinAimRange and visibleForLock then
+				return lockedPart
+			end
+			if Settings.TargetLockSticky then
+				return nil
+			end
+		end
+		State.LockedTargetPlayer = nil
+	end
+
 	local camera = State.Camera
 	if not camera then
 		return nil
@@ -757,6 +1075,71 @@ local function getClosestTarget()
 		end
 	end
 	return closestPart
+end
+
+local function getClosestTargetPlayerCandidate()
+	local camera = State.Camera
+	if not camera then
+		return nil, nil
+	end
+	local mousePosition = UserInputService:GetMouseLocation()
+	local closestPlayer = nil
+	local closestPart = nil
+	local closestDistance = Settings.FOVRadius
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player == LocalPlayer or not isEnemy(player) then
+			continue
+		end
+		local part = getCharacterPart(player, Settings.AimPart)
+		local root = getRoot(player)
+		if not part or not root then
+			continue
+		end
+		if not withinDistance(root, Settings.MaxAimlockDistance) or not isVisible(part) then
+			continue
+		end
+		local screenPosition, onScreen = camera:WorldToViewportPoint(part.Position)
+		if not onScreen then
+			continue
+		end
+		local distance = (Vector2.new(screenPosition.X, screenPosition.Y) - mousePosition).Magnitude
+		if distance < closestDistance then
+			closestDistance = distance
+			closestPlayer = player
+			closestPart = part
+		end
+	end
+	return closestPlayer, closestPart
+end
+
+local function getNearestTargetPlayerCandidate()
+	local localRoot = getLocalRoot()
+	if not localRoot then
+		return nil, nil
+	end
+	local closestPlayer = nil
+	local closestPart = nil
+	local closestDistance = Settings.MaxAimlockDistance
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player == LocalPlayer or not isEnemy(player) then
+			continue
+		end
+		local part = getCharacterPart(player, Settings.AimPart)
+		local root = getRoot(player)
+		if not part or not root then
+			continue
+		end
+		if not withinDistance(root, Settings.MaxAimlockDistance) or not isVisible(part) then
+			continue
+		end
+		local distance = (localRoot.Position - root.Position).Magnitude
+		if distance < closestDistance then
+			closestDistance = distance
+			closestPlayer = player
+			closestPart = part
+		end
+	end
+	return closestPlayer, closestPart
 end
 
 local function aimCameraAt(part)
@@ -1184,6 +1567,7 @@ local function createMainGui()
 		Parent = radarInner,
 	})
 
+	local fovCircleStroke = stroke(Theme.CurrentAccent, 2, 0.15)
 	local fovCircle = create("Frame", {
 		Name = "FOVCircle",
 		AnchorPoint = Vector2.new(0.5, 0.5),
@@ -1192,7 +1576,7 @@ local function createMainGui()
 		Parent = screenGui,
 	}, {
 		create("UICorner", { CornerRadius = UDim.new(1, 0) }),
-		stroke(Theme.Text, 2, 0.15),
+		fovCircleStroke,
 	})
 
 	local crosshairHolder = create("Frame", {
@@ -1203,6 +1587,89 @@ local function createMainGui()
 		BackgroundTransparency = 1,
 		ZIndex = 200,
 		Parent = screenGui,
+	})
+
+	local blurEffect = create("BlurEffect", {
+		Name = "JuliaBlurFX",
+		Enabled = false,
+		Size = 18,
+		Parent = Lighting,
+	})
+
+	local bloomEffect = create("BloomEffect", {
+		Name = "JuliaBloomFX",
+		Enabled = false,
+		Intensity = 1.4,
+		Size = 32,
+		Threshold = 0.9,
+		Parent = Lighting,
+	})
+
+	local nightVisionEffect = create("ColorCorrectionEffect", {
+		Name = "JuliaNightVisionFX",
+		Enabled = false,
+		Brightness = 0.08,
+		Contrast = 0.12,
+		Saturation = 0.05,
+		TintColor = Color3.fromRGB(150, 255, 170),
+		Parent = Lighting,
+	})
+
+	local monochromeEffect = create("ColorCorrectionEffect", {
+		Name = "JuliaMonochromeFX",
+		Enabled = false,
+		Brightness = 0,
+		Contrast = 0.08,
+		Saturation = -1,
+		Parent = Lighting,
+	})
+
+	local saturationEffect = create("ColorCorrectionEffect", {
+		Name = "JuliaSaturationFX",
+		Enabled = false,
+		Brightness = 0.03,
+		Contrast = 0.05,
+		Saturation = 0.45,
+		Parent = Lighting,
+	})
+
+	local cinematicTop = create("Frame", {
+		Name = "CinematicTopBar",
+		Size = UDim2.new(1, 0, 0, 56),
+		Position = UDim2.fromOffset(0, 0),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 700,
+		Parent = screenGui,
+	})
+
+	local cinematicBottom = create("Frame", {
+		Name = "CinematicBottomBar",
+		AnchorPoint = Vector2.new(0, 1),
+		Size = UDim2.new(1, 0, 0, 56),
+		Position = UDim2.new(0, 0, 1, 0),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 700,
+		Parent = screenGui,
+	})
+
+	local mouseHaloStroke = stroke(Theme.CurrentAccent, 2, 0.15)
+	local mouseHalo = create("Frame", {
+		Name = "MouseHalo",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(26, 26),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 650,
+		Parent = screenGui,
+	}, {
+		create("UICorner", { CornerRadius = UDim.new(1, 0) }),
+		mouseHaloStroke,
 	})
 
 	local crosshairEnabled = false
@@ -1561,10 +2028,17 @@ local function createMainGui()
 	local pageOneButtons = {}
 	local pageTwoButtons = {}
 	local pageThreeButtons = {}
+	local pageFourButtons = {}
+	local pageFiveButtons = {}
+	local pageSixButtons = {}
 	local pageOneDecor = {}
 	local pageTwoDecor = {}
 	local pageThreeDecor = {}
+	local pageFourDecor = {}
+	local pageFiveDecor = {}
+	local pageSixDecor = {}
 	local activePage = 1
+	local showNotifier
 
 	local fpsEnabled = false
 	local pingEnabled = false
@@ -1576,6 +2050,48 @@ local function createMainGui()
 	local panelDragStart = nil
 	local panelStartPosition = nil
 	local panelDragInput = nil
+	local rainbowAccentEnabled = false
+	local savedRainbowTheme = nil
+	local lastRainbowAccentUpdate = 0
+	local hudClockEnabled = false
+	local fovPulseEnabled = false
+	local speedHudEnabled = false
+	local targetCounterEnabled = false
+	local spinPulseEnabled = false
+	local blurFXEnabled = false
+	local bloomFXEnabled = false
+	local nightVisionEnabled = false
+	local monochromeEnabled = false
+	local saturationBoostEnabled = false
+	local cinematicBarsEnabled = false
+	local mouseHaloEnabled = false
+	local crosshairSpinEnabled = false
+	local watermarkPulseEnabled = false
+	local radarSpinEnabled = false
+	local toolHudEnabled = false
+	local directionHudEnabled = false
+	local autoEquipToolEnabled = false
+	local dajjalSequenceActive = false
+	local targetLockNotifyEnabled = true
+	local waitingForLockKey = false
+	local lockKeyBindButton = nil
+	local panelAutoHideOnAim = false
+	local panelAutoHiddenByAim = false
+	local infiniteJumpEnabled = false
+	local bunnyHopEnabled = false
+	local antiAFKEnabled = false
+	local zoomUnlockEnabled = false
+	local walkSpeedOverride = false
+	local jumpPowerOverride = false
+	local cameraFOVOverride = false
+	local walkSpeedValues = { false, 20, 24, 32, 40 }
+	local jumpPowerValues = { false, 60, 75, 90, 110 }
+	local cameraFOVValues = { false, 80, 90, 100, 110 }
+	local defaultWalkSpeed = 16
+	local defaultJumpPower = 50
+	local defaultCameraFOV = Workspace.CurrentCamera and Workspace.CurrentCamera.FieldOfView or 70
+	local defaultMinZoom = LocalPlayer.CameraMinZoomDistance
+	local defaultMaxZoom = LocalPlayer.CameraMaxZoomDistance
 
 	local fpsLabel = create("TextLabel", {
 		Name = "FPSCounter",
@@ -1611,7 +2127,190 @@ local function createMainGui()
 		Parent = screenGui,
 	}, { corner(8) })
 
+	local speedLabel = create("TextLabel", {
+		Name = "SpeedCounter",
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.fromOffset(140, 26),
+		Position = UDim2.new(1, -12, 0, 370),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		Text = "Speed: 0",
+		TextColor3 = Theme.Text,
+		TextSize = 14,
+		Font = Enum.Font.GothamBold,
+		Visible = false,
+		ZIndex = 100,
+		Parent = screenGui,
+	}, { corner(8) })
+
+	local targetCountLabel = create("TextLabel", {
+		Name = "TargetCounter",
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.fromOffset(140, 26),
+		Position = UDim2.new(1, -12, 0, 402),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		Text = "Targets: 0",
+		TextColor3 = Theme.Text,
+		TextSize = 14,
+		Font = Enum.Font.GothamBold,
+		Visible = false,
+		ZIndex = 100,
+		Parent = screenGui,
+	}, { corner(8) })
+
+	local lockTargetLabel = create("TextLabel", {
+		Name = "LockedTargetLabel",
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.fromOffset(220, 26),
+		Position = UDim2.new(1, -12, 0, 434),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		Text = "Lock: None",
+		TextColor3 = Theme.Text,
+		TextSize = 14,
+		Font = Enum.Font.GothamBold,
+		Visible = Settings.TargetLockHUD,
+		ZIndex = 100,
+		Parent = screenGui,
+	}, { corner(8) })
+
+	local toolLabel = create("TextLabel", {
+		Name = "ToolHUD",
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.fromOffset(180, 26),
+		Position = UDim2.new(1, -12, 0, 466),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		Text = "Tool: Hands",
+		TextColor3 = Theme.Text,
+		TextSize = 14,
+		Font = Enum.Font.GothamBold,
+		Visible = false,
+		ZIndex = 100,
+		Parent = screenGui,
+	}, { corner(8) })
+
+	local directionLabel = create("TextLabel", {
+		Name = "DirectionHUD",
+		AnchorPoint = Vector2.new(1, 0),
+		Size = UDim2.fromOffset(140, 26),
+		Position = UDim2.new(1, -12, 0, 498),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.45,
+		BorderSizePixel = 0,
+		Text = "Dir: N",
+		TextColor3 = Theme.Text,
+		TextSize = 14,
+		Font = Enum.Font.GothamBold,
+		Visible = false,
+		ZIndex = 100,
+		Parent = screenGui,
+	}, { corner(8) })
+
+	local function getTargetDisplayName(player)
+		if not player then
+			return "None"
+		end
+		return player.DisplayName ~= player.Name and (player.DisplayName .. " (@" .. player.Name .. ")") or player.Name
+	end
+
+	local function getKeyName(keyCode)
+		return keyCode and keyCode.Name or "None"
+	end
+
+	local function getCompassDirection()
+		local camera = Workspace.CurrentCamera or State.Camera
+		if not camera then
+			return "N"
+		end
+		local look = camera.CFrame.LookVector
+		local angle = math.deg(math.atan2(-look.X, -look.Z))
+		local normalized = (angle + 360) % 360
+		local directions = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
+		local index = math.floor(((normalized + 22.5) % 360) / 45) + 1
+		return directions[index]
+	end
+
+	local function getOverrideLabel(name, value)
+		return name .. ": " .. (value and tostring(value) or "Default")
+	end
+
+	local function applyWalkSpeedSetting()
+		local humanoid = getHumanoid(LocalPlayer.Character)
+		if not humanoid then
+			return
+		end
+		humanoid.WalkSpeed = walkSpeedOverride or defaultWalkSpeed
+	end
+
+	local function applyJumpPowerSetting()
+		local humanoid = getHumanoid(LocalPlayer.Character)
+		if not humanoid then
+			return
+		end
+		humanoid.JumpPower = jumpPowerOverride or defaultJumpPower
+	end
+
+	local function applyCameraFOVSetting()
+		local camera = Workspace.CurrentCamera
+		if not camera then
+			return
+		end
+		camera.FieldOfView = cameraFOVOverride or defaultCameraFOV
+	end
+
+	local function updateLockStatusLabel()
+		lockTargetLabel.Text = "Lock: " .. getTargetDisplayName(State.LockedTargetPlayer)
+	end
+
+	local function captureMovementDefaults()
+		local character = LocalPlayer.Character
+		local humanoid = getHumanoid(character)
+		if humanoid then
+			if not walkSpeedOverride then
+				defaultWalkSpeed = humanoid.WalkSpeed
+			end
+			if not jumpPowerOverride then
+				defaultJumpPower = humanoid.JumpPower
+			end
+		end
+		local camera = Workspace.CurrentCamera
+		if camera and not cameraFOVOverride then
+			defaultCameraFOV = camera.FieldOfView
+		end
+	end
+
+	local function getCurrentLockCandidate()
+		if Settings.TargetLockMode == "Nearest" then
+			return getNearestTargetPlayerCandidate()
+		end
+		return getClosestTargetPlayerCandidate()
+	end
+
+	local function clearLockedTarget(silent)
+		local previousTarget = State.LockedTargetPlayer
+		State.LockedTargetPlayer = nil
+		updateLockStatusLabel()
+		if not silent and previousTarget and targetLockNotifyEnabled then
+			showNotifier("Target unlocked", getTargetDisplayName(previousTarget))
+		end
+	end
+
+	local function setLockedTarget(player)
+		State.LockedTargetPlayer = player
+		updateLockStatusLabel()
+		if player and targetLockNotifyEnabled then
+			showNotifier("Target locked", getTargetDisplayName(player))
+		end
+	end
+
 	local function updateTopRightLayout()
+		watermark.Size = hudClockEnabled and UDim2.fromOffset(220, 32) or UDim2.fromOffset(160, 32)
 		local nextY = 80
 		radarFrame.Visible = radarVisible
 		radarFrame.Position = UDim2.new(1, -12, 0, nextY)
@@ -1627,6 +2326,36 @@ local function createMainGui()
 
 		pingLabel.Position = UDim2.new(1, -12, 0, nextY)
 		pingLabel.Visible = pingEnabled
+		if pingEnabled then
+			nextY += 32
+		end
+
+		speedLabel.Position = UDim2.new(1, -12, 0, nextY)
+		speedLabel.Visible = speedHudEnabled
+		if speedHudEnabled then
+			nextY += 32
+		end
+
+		targetCountLabel.Position = UDim2.new(1, -12, 0, nextY)
+		targetCountLabel.Visible = targetCounterEnabled
+		if targetCounterEnabled then
+			nextY += 32
+		end
+
+		lockTargetLabel.Position = UDim2.new(1, -12, 0, nextY)
+		lockTargetLabel.Visible = Settings.TargetLockHUD
+		if Settings.TargetLockHUD then
+			nextY += 32
+		end
+
+		toolLabel.Position = UDim2.new(1, -12, 0, nextY)
+		toolLabel.Visible = toolHudEnabled
+		if toolHudEnabled then
+			nextY += 32
+		end
+
+		directionLabel.Position = UDim2.new(1, -12, 0, nextY)
+		directionLabel.Visible = directionHudEnabled
 	end
 
 	local function updateStyle()
@@ -1638,6 +2367,9 @@ local function createMainGui()
 			ColorSequenceKeypoint.new(0, Theme.GradientA),
 			ColorSequenceKeypoint.new(1, Theme.GradientB),
 		})
+		fovCircleStroke.Color = Theme.CurrentAccent
+		toolLabel.TextColor3 = Theme.Text
+		directionLabel.TextColor3 = Theme.Text
 		for _, button in ipairs(pageOneButtons) do
 			if button and button:IsA("TextButton") then
 				button.BackgroundTransparency = Theme.ButtonTransparency
@@ -1653,6 +2385,22 @@ local function createMainGui()
 				button.BackgroundTransparency = Theme.ButtonTransparency
 			end
 		end
+		for _, button in ipairs(pageFourButtons) do
+			if button and button:IsA("TextButton") then
+				button.BackgroundTransparency = Theme.ButtonTransparency
+			end
+		end
+		for _, button in ipairs(pageFiveButtons) do
+			if button and button:IsA("TextButton") then
+				button.BackgroundTransparency = Theme.ButtonTransparency
+			end
+		end
+		for _, button in ipairs(pageSixButtons) do
+			if button and button:IsA("TextButton") then
+				button.BackgroundTransparency = Theme.ButtonTransparency
+			end
+		end
+		mouseHaloStroke.Color = Theme.CurrentAccent
 		applyCrosshairStyle(currentCrosshairIndex)
 		for _, sliderParts in ipairs(sliderVisuals) do
 			if sliderParts.Frame then
@@ -1681,7 +2429,16 @@ local function createMainGui()
 	end
 
 	local function registerPageDecor(instance, page)
-		if page == 3 then
+		if page == 6 then
+			table.insert(pageSixDecor, instance)
+			instance.Visible = activePage == 6
+		elseif page == 5 then
+			table.insert(pageFiveDecor, instance)
+			instance.Visible = activePage == 5
+		elseif page == 4 then
+			table.insert(pageFourDecor, instance)
+			instance.Visible = activePage == 4
+		elseif page == 3 then
 			table.insert(pageThreeDecor, instance)
 			instance.Visible = activePage == 3
 		elseif page == 2 then
@@ -1696,15 +2453,19 @@ local function createMainGui()
 
 	local function applyPerformanceMode()
 		if Settings.LowEndMode then
-			Settings.ESPUpdateRate = Settings.ESPMode == "2D Box" and (1 / 20) or 0.16
+			Settings.ESPUpdateRate = Settings.ESPMode == "2D Box" and (1 / 22) or 0.14
+			Settings.LineESPUpdateRate = 1 / 30
 			Settings.FollowerCloneUpdateRate = 1 / 15
 			Settings.FOVUpdateRate = 1 / 30
 			Settings.CounterUpdateRate = 1.0
+			radarConfig.UpdateRate = 1 / 24
 		else
-			Settings.ESPUpdateRate = Settings.ESPMode == "2D Box" and (1 / 45) or 0.08
-			Settings.FollowerCloneUpdateRate = 1 / 30
+			Settings.ESPUpdateRate = Settings.ESPMode == "2D Box" and (1 / 36) or 0.09
+			Settings.LineESPUpdateRate = 1 / 60
+			Settings.FollowerCloneUpdateRate = 1 / 28
 			Settings.FOVUpdateRate = 1 / 60
-			Settings.CounterUpdateRate = 0.4
+			Settings.CounterUpdateRate = 0.45
+			radarConfig.UpdateRate = 1 / 30
 		end
 	end
 
@@ -1721,6 +2482,15 @@ local function createMainGui()
 		for _, button in ipairs(pageThreeButtons) do
 			button.Visible = page == 3
 		end
+		for _, button in ipairs(pageFourButtons) do
+			button.Visible = page == 4
+		end
+		for _, button in ipairs(pageFiveButtons) do
+			button.Visible = page == 5
+		end
+		for _, button in ipairs(pageSixButtons) do
+			button.Visible = page == 6
+		end
 		for _, widget in ipairs(pageOneDecor) do
 			widget.Visible = page == 1
 		end
@@ -1729,6 +2499,15 @@ local function createMainGui()
 		end
 		for _, widget in ipairs(pageThreeDecor) do
 			widget.Visible = page == 3
+		end
+		for _, widget in ipairs(pageFourDecor) do
+			widget.Visible = page == 4
+		end
+		for _, widget in ipairs(pageFiveDecor) do
+			widget.Visible = page == 5
+		end
+		for _, widget in ipairs(pageSixDecor) do
+			widget.Visible = page == 6
 		end
 	end
 
@@ -1763,7 +2542,16 @@ local function createMainGui()
 			AutoButtonColor = false,
 			Parent = panel,
 		}, { corner(8) })
-		if page == 3 then
+		if page == 6 then
+			table.insert(pageSixButtons, button)
+			button.Visible = activePage == 6
+		elseif page == 5 then
+			table.insert(pageFiveButtons, button)
+			button.Visible = activePage == 5
+		elseif page == 4 then
+			table.insert(pageFourButtons, button)
+			button.Visible = activePage == 4
+		elseif page == 3 then
 			table.insert(pageThreeButtons, button)
 			button.Visible = activePage == 3
 		elseif page == 2 then
@@ -2007,6 +2795,8 @@ local function createMainGui()
 				if data.Highlight then data.Highlight.Enabled = false end
 				if data.NameGui then data.NameGui.Enabled = false end
 				if data.BoxFrame then data.BoxFrame.Visible = false end
+				if data.TracerLine then data.TracerLine.Visible = false end
+				if data.BoneLines then hideLineFrames(data.BoneLines) end
 			end
 		end
 	end, nil, nil, nil, 1)
@@ -2233,6 +3023,7 @@ local function createMainGui()
 	local notifiedJuliaUsers = {}
 	local spinEnabled = false
 	local spinSpeed = 720
+	local spinDirection = 1
 	local spinSpeeds = { 360, 720, 1080, 1440, 5000, 10000, 25000, 50000 }
 	local followerCloneEnabled = false
 	local followerCloneGap = 6
@@ -2398,7 +3189,7 @@ local function createMainGui()
 		end
 	end
 
-	local function showNotifier(title, message)
+	showNotifier = function(title, message)
 		local note = create("TextLabel", {
 			Name = "JuliaNotifier",
 			AnchorPoint = Vector2.new(1, 0),
@@ -3020,18 +3811,844 @@ local function createMainGui()
 		end)
 	end, nil, nil, nil, 3)
 
-	makeButton("Back To Main", 630, function()
+	makeButton("Back Main", 630, function()
 		setPage(1)
-	end, nil, nil, nil, 3)
+	end, 110, 10, 28, 3)
 
+	makeButton("Extras >", 630, function()
+		setPage(4)
+	end, 110, 130, 28, 3)
+
+	registerPageDecor(create("TextLabel", {
+		Name = "PageFourESPHeader",
+		Size = UDim2.new(1, -20, 0, 20),
+		Position = UDim2.fromOffset(10, 76),
+		BackgroundTransparency = 1,
+		Text = "ESP Extras / Radar",
+		TextColor3 = Theme.Text,
+		TextSize = 14,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = panel,
+	}), 4)
+
+	makeButton("Bone ESP: OFF", 104, function(button)
+		Settings.BoneESPEnabled = not Settings.BoneESPEnabled
+		button.Text = "Bone ESP: " .. (Settings.BoneESPEnabled and "ON" or "OFF")
+		if not Settings.BoneESPEnabled then
+			for _, data in pairs(State.ESPObjects) do
+				if data.BoneLines then
+					hideLineFrames(data.BoneLines)
+				end
+			end
+		end
+	end, nil, nil, nil, 4)
+
+	makeButton("Bone Thickness: 2", 140, function(button)
+		Settings.BoneThickness += 1
+		if Settings.BoneThickness > 4 then
+			Settings.BoneThickness = 1
+		end
+		button.Text = "Bone Thickness: " .. tostring(Settings.BoneThickness)
+	end, nil, nil, nil, 4)
+
+	makeButton("Tracers: OFF", 176, function(button)
+		Settings.TracersEnabled = not Settings.TracersEnabled
+		button.Text = "Tracers: " .. (Settings.TracersEnabled and "ON" or "OFF")
+		if not Settings.TracersEnabled then
+			for _, data in pairs(State.ESPObjects) do
+				if data.TracerLine then
+					data.TracerLine.Visible = false
+				end
+			end
+		end
+	end, nil, nil, nil, 4)
+
+	makeButton("Tracer Origin: Bottom", 212, function(button)
+		if Settings.TracerOrigin == "Bottom" then
+			Settings.TracerOrigin = "Center"
+		elseif Settings.TracerOrigin == "Center" then
+			Settings.TracerOrigin = "Top"
+		else
+			Settings.TracerOrigin = "Bottom"
+		end
+		button.Text = "Tracer Origin: " .. Settings.TracerOrigin
+	end, nil, nil, nil, 4)
+
+	makeButton("Tracer Thick: 1", 248, function(button)
+		Settings.TracerThickness += 1
+		if Settings.TracerThickness > 3 then
+			Settings.TracerThickness = 1
+		end
+		button.Text = "Tracer Thick: " .. tostring(Settings.TracerThickness)
+	end, nil, nil, nil, 4)
+
+	makeButton("Radar Facing: Camera", 284, function(button)
+		radarConfig.UseCameraFacing = not radarConfig.UseCameraFacing
+		button.Text = "Radar Facing: " .. (radarConfig.UseCameraFacing and "Camera" or "Character")
+		updateRadar()
+	end, nil, nil, nil, 4)
+
+	makeButton("Radar Size: 220", 320, function(button)
+		local radarSizes = { 180, 220, 260, 300 }
+		local currentIndex = 1
+		for i, value in ipairs(radarSizes) do
+			if value == radarConfig.Size then
+				currentIndex = i
+				break
+			end
+		end
+		currentIndex += 1
+		if currentIndex > #radarSizes then
+			currentIndex = 1
+		end
+		radarConfig.Size = radarSizes[currentIndex]
+		radarFrame.Size = UDim2.fromOffset(radarConfig.Size, radarConfig.Size)
+		radarRadius = radarConfig.Size * 0.5 - 16
+		button.Text = "Radar Size: " .. tostring(radarConfig.Size)
+		updateTopRightLayout()
+		updateRadar()
+	end, nil, nil, nil, 4)
+
+	registerPageDecor(create("TextLabel", {
+		Name = "PageFourFunHeader",
+		Size = UDim2.new(1, -20, 0, 20),
+		Position = UDim2.fromOffset(10, 372),
+		BackgroundTransparency = 1,
+		Text = "HUD / Fun / Utility",
+		TextColor3 = Theme.Text,
+		TextSize = 14,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = panel,
+	}), 4)
+
+	makeButton("Rainbow Accent: OFF", 400, function(button)
+		rainbowAccentEnabled = not rainbowAccentEnabled
+		if rainbowAccentEnabled then
+			savedRainbowTheme = {
+				CurrentAccent = Theme.CurrentAccent,
+				GradientA = Theme.GradientA,
+				GradientB = Theme.GradientB,
+			}
+		elseif savedRainbowTheme then
+			Theme.CurrentAccent = savedRainbowTheme.CurrentAccent
+			Theme.GradientA = savedRainbowTheme.GradientA
+			Theme.GradientB = savedRainbowTheme.GradientB
+			savedRainbowTheme = nil
+			updateStyle()
+		end
+		button.Text = "Rainbow Accent: " .. (rainbowAccentEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 4)
+
+	makeButton("HUD Clock: OFF", 436, function(button)
+		hudClockEnabled = not hudClockEnabled
+		button.Text = "HUD Clock: " .. (hudClockEnabled and "ON" or "OFF")
+		watermark.Text = hudClockEnabled and ("Julia Hub | " .. os.date("%H:%M:%S")) or "Julia Hub"
+		updateTopRightLayout()
+	end, nil, nil, nil, 4)
+
+	makeButton("FOV Pulse: OFF", 472, function(button)
+		fovPulseEnabled = not fovPulseEnabled
+		button.Text = "FOV Pulse: " .. (fovPulseEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 4)
+
+	makeButton("Spin Dir: CW", 508, function(button)
+		spinDirection = spinDirection == 1 and -1 or 1
+		button.Text = "Spin Dir: " .. (spinDirection == 1 and "CW" or "CCW")
+	end, nil, nil, nil, 4)
+
+	makeButton("Spin Pulse: OFF", 544, function(button)
+		spinPulseEnabled = not spinPulseEnabled
+		button.Text = "Spin Pulse: " .. (spinPulseEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 4)
+
+	makeButton("Speed HUD: OFF", 580, function(button)
+		speedHudEnabled = not speedHudEnabled
+		button.Text = "Speed HUD: " .. (speedHudEnabled and "ON" or "OFF")
+		updateTopRightLayout()
+	end, nil, nil, nil, 4)
+
+	makeButton("Target HUD: OFF", 616, function(button)
+		targetCounterEnabled = not targetCounterEnabled
+		button.Text = "Target HUD: " .. (targetCounterEnabled and "ON" or "OFF")
+		updateTopRightLayout()
+	end, nil, nil, nil, 4)
+
+	makeButton("Notify Test", 652, function()
+		showNotifier("Julia Hub", "Notification test sent.")
+	end, nil, nil, nil, 4)
+
+	makeButton("< Page 3", 688, function()
+		setPage(3)
+	end, 110, 10, 28, 4)
+
+	makeButton("Utility >", 688, function()
+		setPage(5)
+	end, 110, 130, 28, 4)
+
+	captureMovementDefaults()
+
+	registerPageDecor(create("TextLabel", {
+		Name = "PageFiveTargetHeader",
+		Size = UDim2.new(1, -20, 0, 20),
+		Position = UDim2.fromOffset(10, 76),
+		BackgroundTransparency = 1,
+		Text = "Target Lock",
+		TextColor3 = Theme.Text,
+		TextSize = 14,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = panel,
+	}), 5)
+
+	makeButton("Target Lock: ON", 104, function(button)
+		Settings.TargetLockEnabled = not Settings.TargetLockEnabled
+		button.Text = "Target Lock: " .. (Settings.TargetLockEnabled and "ON" or "OFF")
+		if not Settings.TargetLockEnabled then
+			clearLockedTarget(true)
+		end
+	end, nil, nil, nil, 5)
+
+	lockKeyBindButton = makeButton("Lock Key: " .. getKeyName(Settings.TargetLockKey), 140, function(button)
+		waitingForLockKey = true
+		button.Text = "Lock Key: Press Any Key"
+	end, nil, nil, nil, 5)
+
+	makeButton("Lock Pick: Crosshair", 176, function(button)
+		Settings.TargetLockMode = Settings.TargetLockMode == "Crosshair" and "Nearest" or "Crosshair"
+		button.Text = "Lock Pick: " .. Settings.TargetLockMode
+	end, nil, nil, nil, 5)
+
+	makeButton("Lock Sticky: ON", 212, function(button)
+		Settings.TargetLockSticky = not Settings.TargetLockSticky
+		button.Text = "Lock Sticky: " .. (Settings.TargetLockSticky and "ON" or "OFF")
+	end, nil, nil, nil, 5)
+
+	makeButton("Lock Notify: ON", 248, function(button)
+		targetLockNotifyEnabled = not targetLockNotifyEnabled
+		button.Text = "Lock Notify: " .. (targetLockNotifyEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 5)
+
+	makeButton("Lock HUD: ON", 284, function(button)
+		Settings.TargetLockHUD = not Settings.TargetLockHUD
+		button.Text = "Lock HUD: " .. (Settings.TargetLockHUD and "ON" or "OFF")
+		updateTopRightLayout()
+	end, nil, nil, nil, 5)
+
+	makeButton("Clear Locked Target", 320, function()
+		clearLockedTarget()
+	end, nil, nil, nil, 5)
+
+	registerPageDecor(create("TextLabel", {
+		Name = "PageFiveUtilityHeader",
+		Size = UDim2.new(1, -20, 0, 20),
+		Position = UDim2.fromOffset(10, 356),
+		BackgroundTransparency = 1,
+		Text = "Utility / Movement",
+		TextColor3 = Theme.Text,
+		TextSize = 14,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = panel,
+	}), 5)
+
+	makeButton("Hide Panel ADS: OFF", 384, function(button)
+		panelAutoHideOnAim = not panelAutoHideOnAim
+		button.Text = "Hide Panel ADS: " .. (panelAutoHideOnAim and "ON" or "OFF")
+	end, nil, nil, nil, 5)
+
+	makeButton("Infinite Jump: OFF", 420, function(button)
+		infiniteJumpEnabled = not infiniteJumpEnabled
+		button.Text = "Infinite Jump: " .. (infiniteJumpEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 5)
+
+	makeButton("Bunny Hop: OFF", 456, function(button)
+		bunnyHopEnabled = not bunnyHopEnabled
+		button.Text = "Bunny Hop: " .. (bunnyHopEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 5)
+
+	makeButton("Anti-AFK: OFF", 492, function(button)
+		antiAFKEnabled = not antiAFKEnabled
+		button.Text = "Anti-AFK: " .. (antiAFKEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 5)
+
+	makeButton("Zoom Unlock: OFF", 528, function(button)
+		zoomUnlockEnabled = not zoomUnlockEnabled
+		if zoomUnlockEnabled then
+			LocalPlayer.CameraMinZoomDistance = 0.5
+			LocalPlayer.CameraMaxZoomDistance = 1000
+		else
+			LocalPlayer.CameraMinZoomDistance = defaultMinZoom
+			LocalPlayer.CameraMaxZoomDistance = defaultMaxZoom
+		end
+		button.Text = "Zoom Unlock: " .. (zoomUnlockEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 5)
+
+	local walkSpeedButton = makeButton(getOverrideLabel("WalkSpeed", walkSpeedOverride), 564, function(button)
+		local currentIndex = 1
+		for index, value in ipairs(walkSpeedValues) do
+			if value == walkSpeedOverride then
+				currentIndex = index
+				break
+			end
+		end
+		currentIndex += 1
+		if currentIndex > #walkSpeedValues then
+			currentIndex = 1
+		end
+		walkSpeedOverride = walkSpeedValues[currentIndex]
+		applyWalkSpeedSetting()
+		button.Text = getOverrideLabel("WalkSpeed", walkSpeedOverride)
+	end, nil, nil, nil, 5)
+
+	local jumpPowerButton = makeButton(getOverrideLabel("JumpPower", jumpPowerOverride), 600, function(button)
+		local currentIndex = 1
+		for index, value in ipairs(jumpPowerValues) do
+			if value == jumpPowerOverride then
+				currentIndex = index
+				break
+			end
+		end
+		currentIndex += 1
+		if currentIndex > #jumpPowerValues then
+			currentIndex = 1
+		end
+		jumpPowerOverride = jumpPowerValues[currentIndex]
+		applyJumpPowerSetting()
+		button.Text = getOverrideLabel("JumpPower", jumpPowerOverride)
+	end, nil, nil, nil, 5)
+
+	local cameraFOVButton = makeButton(getOverrideLabel("Camera FOV", cameraFOVOverride), 636, function(button)
+		local currentIndex = 1
+		for index, value in ipairs(cameraFOVValues) do
+			if value == cameraFOVOverride then
+				currentIndex = index
+				break
+			end
+		end
+		currentIndex += 1
+		if currentIndex > #cameraFOVValues then
+			currentIndex = 1
+		end
+		cameraFOVOverride = cameraFOVValues[currentIndex]
+		applyCameraFOVSetting()
+		button.Text = getOverrideLabel("Camera FOV", cameraFOVOverride)
+	end, nil, nil, nil, 5)
+
+	makeButton("Reset Movement", 672, function()
+		walkSpeedOverride = false
+		jumpPowerOverride = false
+		cameraFOVOverride = false
+		if zoomUnlockEnabled then
+			LocalPlayer.CameraMinZoomDistance = 0.5
+			LocalPlayer.CameraMaxZoomDistance = 1000
+		else
+			LocalPlayer.CameraMinZoomDistance = defaultMinZoom
+			LocalPlayer.CameraMaxZoomDistance = defaultMaxZoom
+		end
+		local camera = Workspace.CurrentCamera
+		if camera then
+			applyCameraFOVSetting()
+		end
+		local humanoid = getHumanoid(LocalPlayer.Character)
+		if humanoid then
+			applyWalkSpeedSetting()
+			applyJumpPowerSetting()
+		end
+		if walkSpeedButton then
+			walkSpeedButton.Text = getOverrideLabel("WalkSpeed", walkSpeedOverride)
+		end
+		if jumpPowerButton then
+			jumpPowerButton.Text = getOverrideLabel("JumpPower", jumpPowerOverride)
+		end
+		if cameraFOVButton then
+			cameraFOVButton.Text = getOverrideLabel("Camera FOV", cameraFOVOverride)
+		end
+	end, nil, nil, nil, 5)
+
+	makeButton("< Extras", 708, function()
+		setPage(4)
+	end, 110, 10, 28, 5)
+
+	makeButton("Chaos >", 708, function()
+		setPage(6)
+	end, 110, 130, 28, 5)
+
+	local function summonDajjalSequence(button)
+		if dajjalSequenceActive then
+			return
+		end
+		dajjalSequenceActive = true
+		if button then
+			button.Text = "Summoning..."
+		end
+
+		local overlay = create("Frame", {
+			Name = "DajjalSequence",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Color3.fromRGB(10, 0, 0),
+			BackgroundTransparency = 0.15,
+			BorderSizePixel = 0,
+			ZIndex = 900,
+			Parent = screenGui,
+		})
+
+		local flash = create("Frame", {
+			Name = "DajjalFlash",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Color3.fromRGB(255, 20, 20),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			ZIndex = 901,
+			Parent = overlay,
+		})
+
+		local static = create("Frame", {
+			Name = "StaticNoise",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+			BackgroundTransparency = 0.96,
+			BorderSizePixel = 0,
+			ZIndex = 902,
+			Parent = overlay,
+		})
+
+		local title = create("TextLabel", {
+			Name = "DajjalTitle",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.12),
+			Size = UDim2.fromOffset(520, 50),
+			BackgroundTransparency = 1,
+			Text = "SUMMON THE DAJJAL",
+			TextColor3 = Color3.fromRGB(255, 90, 90),
+			TextStrokeTransparency = 0,
+			TextSize = 28,
+			Font = Enum.Font.GothamBlack,
+			ZIndex = 905,
+			Parent = overlay,
+		})
+
+		local subtitle = create("TextLabel", {
+			Name = "DajjalSubtitle",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.19),
+			Size = UDim2.fromOffset(620, 28),
+			BackgroundTransparency = 1,
+			Text = "one eye, false throne, dust from the east",
+			TextColor3 = Color3.fromRGB(220, 220, 220),
+			TextStrokeTransparency = 0.15,
+			TextSize = 16,
+			Font = Enum.Font.GothamBold,
+			ZIndex = 905,
+			Parent = overlay,
+		})
+
+		local eyeOuter = create("Frame", {
+			Name = "DajjalEyeOuter",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(260, 144),
+			BackgroundTransparency = 1,
+			ZIndex = 904,
+			Parent = overlay,
+		}, {
+			create("UICorner", { CornerRadius = UDim.new(1, 0) }),
+			stroke(Color3.fromRGB(255, 80, 80), 4, 0.08),
+		})
+
+		local eyeInner = create("Frame", {
+			Name = "DajjalEyeInner",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(92, 92),
+			BackgroundColor3 = Color3.fromRGB(170, 0, 0),
+			BorderSizePixel = 0,
+			ZIndex = 905,
+			Parent = eyeOuter,
+		}, {
+			create("UICorner", { CornerRadius = UDim.new(1, 0) }),
+		})
+
+		local pupil = create("Frame", {
+			Name = "DajjalPupil",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.5),
+			Size = UDim2.fromOffset(28, 64),
+			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+			BorderSizePixel = 0,
+			ZIndex = 906,
+			Parent = eyeInner,
+		}, {
+			create("UICorner", { CornerRadius = UDim.new(1, 0) }),
+		})
+
+		local leftPanel = create("Frame", {
+			Name = "DajjalLeftPanel",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.22, 0.54),
+			Size = UDim2.fromOffset(170, 170),
+			BackgroundColor3 = Color3.fromRGB(18, 18, 22),
+			BackgroundTransparency = 0.18,
+			BorderSizePixel = 0,
+			Rotation = -8,
+			ZIndex = 903,
+			Parent = overlay,
+		}, {
+			corner(12),
+			stroke(Color3.fromRGB(255, 80, 80), 2, 0.2),
+		})
+
+		local rightPanel = create("Frame", {
+			Name = "DajjalRightPanel",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.78, 0.54),
+			Size = UDim2.fromOffset(170, 170),
+			BackgroundColor3 = Color3.fromRGB(18, 18, 22),
+			BackgroundTransparency = 0.18,
+			BorderSizePixel = 0,
+			Rotation = 8,
+			ZIndex = 903,
+			Parent = overlay,
+		}, {
+			corner(12),
+			stroke(Color3.fromRGB(255, 80, 80), 2, 0.2),
+		})
+
+		local leftCaption = create("TextLabel", {
+			Name = "LeftCaption",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.15),
+			Size = UDim2.new(1, -16, 0, 24),
+			BackgroundTransparency = 1,
+			Text = "ONE EYED SIGN",
+			TextColor3 = Color3.fromRGB(255, 255, 255),
+			TextStrokeTransparency = 0.1,
+			TextSize = 14,
+			Font = Enum.Font.GothamBlack,
+			ZIndex = 904,
+			Parent = leftPanel,
+		})
+
+		local rightCaption = create("TextLabel", {
+			Name = "RightCaption",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.15),
+			Size = UDim2.new(1, -16, 0, 24),
+			BackgroundTransparency = 1,
+			Text = "FALSE THRONE",
+			TextColor3 = Color3.fromRGB(255, 255, 255),
+			TextStrokeTransparency = 0.1,
+			TextSize = 14,
+			Font = Enum.Font.GothamBlack,
+			ZIndex = 904,
+			Parent = rightPanel,
+		})
+
+		local function makeSigil(parent, position, size, color, transparency, rotation)
+			local sigil = create("Frame", {
+				AnchorPoint = Vector2.new(0.5, 0.5),
+				Position = position,
+				Size = size,
+				BackgroundColor3 = color,
+				BackgroundTransparency = transparency or 0,
+				BorderSizePixel = 0,
+				Rotation = rotation or 0,
+				ZIndex = 904,
+				Parent = parent,
+			})
+			return sigil
+		end
+
+		makeSigil(leftPanel, UDim2.fromScale(0.5, 0.55), UDim2.fromOffset(96, 3), Color3.fromRGB(255, 80, 80), 0.15, 0)
+		makeSigil(leftPanel, UDim2.fromScale(0.5, 0.55), UDim2.fromOffset(3, 96), Color3.fromRGB(255, 80, 80), 0.15, 0)
+		makeSigil(leftPanel, UDim2.fromScale(0.5, 0.55), UDim2.fromOffset(96, 3), Color3.fromRGB(255, 80, 80), 0.15, 45)
+		makeSigil(leftPanel, UDim2.fromScale(0.5, 0.55), UDim2.fromOffset(96, 3), Color3.fromRGB(255, 80, 80), 0.15, -45)
+		makeSigil(rightPanel, UDim2.fromScale(0.5, 0.58), UDim2.fromOffset(112, 16), Color3.fromRGB(35, 35, 35), 0.05, 0)
+		makeSigil(rightPanel, UDim2.fromScale(0.5, 0.48), UDim2.fromOffset(84, 10), Color3.fromRGB(90, 15, 15), 0.05, 0)
+		makeSigil(rightPanel, UDim2.fromScale(0.5, 0.68), UDim2.fromOffset(64, 8), Color3.fromRGB(45, 45, 45), 0.05, 0)
+
+		local footer = create("TextLabel", {
+			Name = "DajjalFooter",
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0.5, 0.86),
+			Size = UDim2.fromOffset(540, 34),
+			BackgroundTransparency = 1,
+			Text = "the watcher arrives",
+			TextColor3 = Color3.fromRGB(255, 120, 120),
+			TextStrokeTransparency = 0.05,
+			TextSize = 20,
+			Font = Enum.Font.GothamBold,
+			ZIndex = 905,
+			Parent = overlay,
+		})
+
+		local chantSound = create("Sound", {
+			Name = "DajjalHum",
+			SoundId = "rbxasset://sounds/uuhhh.wav",
+			Volume = 1.2,
+			PlaybackSpeed = 0.72,
+			Looped = true,
+			Parent = overlay,
+		})
+
+		local hitSound = create("Sound", {
+			Name = "DajjalHit",
+			SoundId = "rbxasset://sounds/electronicpingshort.wav",
+			Volume = 1,
+			PlaybackSpeed = 0.55,
+			Parent = overlay,
+		})
+
+		pcall(function()
+			chantSound:Play()
+		end)
+
+		task.spawn(function()
+			local phrases = {
+				"ONE EYED SIGN",
+				"FALSE THRONE",
+				"DUST OF THE EAST",
+				"THE WATCHER ARRIVES",
+				"THE GATE IS OPEN",
+			}
+			local footerPhrases = {
+				"shadows move behind the veil",
+				"the sky grows heavy",
+				"the drums get closer",
+				"the horizon is split",
+				"too late to turn back",
+			}
+			for index, phrase in ipairs(phrases) do
+				if not overlay.Parent then
+					break
+				end
+				title.Text = phrase
+				subtitle.Text = footerPhrases[index]
+				leftCaption.Text = phrase
+				rightCaption.Text = footerPhrases[index]:upper()
+				leftPanel.Rotation = -8 + (index * 4)
+				rightPanel.Rotation = 8 - (index * 4)
+				eyeOuter.Size = UDim2.fromOffset(240 + (index * 18), 132 + (index * 10))
+				eyeInner.Size = UDim2.fromOffset(86 + (index * 6), 86 + (index * 6))
+				pupil.Position = UDim2.new(0.5, math.random(-10, 10), 0.5, math.random(-6, 6))
+				flash.BackgroundTransparency = index % 2 == 0 and 0.78 or 0.9
+				static.BackgroundTransparency = 0.92 - (index * 0.02)
+				overlay.BackgroundColor3 = index % 2 == 0 and Color3.fromRGB(20, 0, 0) or Color3.fromRGB(0, 0, 0)
+				pcall(function()
+					hitSound:Play()
+				end)
+				task.wait(0.65)
+				flash.BackgroundTransparency = 1
+				task.wait(0.3)
+			end
+			task.wait(0.4)
+			if overlay and overlay.Parent then
+				overlay:Destroy()
+			end
+			dajjalSequenceActive = false
+			if button and button.Parent then
+				button.Text = "Summon the Dajjal"
+			end
+			LocalPlayer:Kick("The Dajjal has arrived, fool.")
+		end)
+	end
+
+	registerPageDecor(create("TextLabel", {
+		Name = "PageSixChaosHeader",
+		Size = UDim2.new(1, -20, 0, 20),
+		Position = UDim2.fromOffset(10, 76),
+		BackgroundTransparency = 1,
+		Text = "Chaos / Utility",
+		TextColor3 = Theme.Text,
+		TextSize = 14,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Parent = panel,
+	}), 6)
+
+	makeButton("Summon the Dajjal", 104, function(button)
+		summonDajjalSequence(button)
+	end, nil, nil, nil, 6)
+
+	makeButton("Blur FX: OFF", 140, function(button)
+		blurFXEnabled = not blurFXEnabled
+		blurEffect.Enabled = blurFXEnabled
+		button.Text = "Blur FX: " .. (blurFXEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 6)
+
+	makeButton("Bloom FX: OFF", 176, function(button)
+		bloomFXEnabled = not bloomFXEnabled
+		bloomEffect.Enabled = bloomFXEnabled
+		button.Text = "Bloom FX: " .. (bloomFXEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 6)
+
+	makeButton("Night Vision: OFF", 212, function(button)
+		nightVisionEnabled = not nightVisionEnabled
+		nightVisionEffect.Enabled = nightVisionEnabled
+		button.Text = "Night Vision: " .. (nightVisionEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 6)
+
+	makeButton("Monochrome: OFF", 248, function(button)
+		monochromeEnabled = not monochromeEnabled
+		monochromeEffect.Enabled = monochromeEnabled
+		button.Text = "Monochrome: " .. (monochromeEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 6)
+
+	makeButton("Saturation+: OFF", 284, function(button)
+		saturationBoostEnabled = not saturationBoostEnabled
+		saturationEffect.Enabled = saturationBoostEnabled
+		button.Text = "Saturation+: " .. (saturationBoostEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 6)
+
+	makeButton("Cinematic Bars: OFF", 320, function(button)
+		cinematicBarsEnabled = not cinematicBarsEnabled
+		cinematicTop.Visible = cinematicBarsEnabled
+		cinematicBottom.Visible = cinematicBarsEnabled
+		button.Text = "Cinematic Bars: " .. (cinematicBarsEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 6)
+
+	makeButton("Mouse Halo: OFF", 356, function(button)
+		mouseHaloEnabled = not mouseHaloEnabled
+		mouseHalo.Visible = mouseHaloEnabled
+		button.Text = "Mouse Halo: " .. (mouseHaloEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 6)
+
+	makeButton("Crosshair Spin: OFF", 392, function(button)
+		crosshairSpinEnabled = not crosshairSpinEnabled
+		if not crosshairSpinEnabled then
+			crosshairHolder.Rotation = 0
+		end
+		button.Text = "Crosshair Spin: " .. (crosshairSpinEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 6)
+
+	makeButton("Watermark Pulse: OFF", 428, function(button)
+		watermarkPulseEnabled = not watermarkPulseEnabled
+		if not watermarkPulseEnabled then
+			updateTopRightLayout()
+		end
+		button.Text = "Watermark Pulse: " .. (watermarkPulseEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 6)
+
+	makeButton("Radar Spin: OFF", 464, function(button)
+		radarSpinEnabled = not radarSpinEnabled
+		if not radarSpinEnabled then
+			radarFrame.Rotation = 0
+		end
+		button.Text = "Radar Spin: " .. (radarSpinEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 6)
+
+	makeButton("Tool HUD: OFF", 500, function(button)
+		toolHudEnabled = not toolHudEnabled
+		updateTopRightLayout()
+		button.Text = "Tool HUD: " .. (toolHudEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 6)
+
+	makeButton("Direction HUD: OFF", 536, function(button)
+		directionHudEnabled = not directionHudEnabled
+		updateTopRightLayout()
+		button.Text = "Direction HUD: " .. (directionHudEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 6)
+
+	makeButton("Auto Equip: OFF", 572, function(button)
+		autoEquipToolEnabled = not autoEquipToolEnabled
+		button.Text = "Auto Equip: " .. (autoEquipToolEnabled and "ON" or "OFF")
+	end, nil, nil, nil, 6)
+
+	makeButton("Quick Reset", 608, function()
+		local humanoid = getHumanoid(LocalPlayer.Character)
+		if humanoid then
+			humanoid.Health = 0
+		end
+	end, nil, nil, nil, 6)
+
+	makeButton("< Utility", 708, function()
+		setPage(5)
+	end, 110, 10, 28, 6)
+
+	makeButton("Back Main", 708, function()
+		setPage(1)
+	end, 110, 130, 28, 6)
+
+	local function applyLockKeyButtonText()
+		if lockKeyBindButton and lockKeyBindButton.Parent then
+			lockKeyBindButton.Text = "Lock Key: " .. getKeyName(Settings.TargetLockKey)
+		end
+	end
+
+	local function toggleTargetLock()
+		if not Settings.TargetLockEnabled then
+			if targetLockNotifyEnabled then
+				showNotifier("Target lock", "Enable target lock first.")
+			end
+			return
+		end
+		local candidatePlayer = getCurrentLockCandidate()
+		if candidatePlayer then
+			if State.LockedTargetPlayer == candidatePlayer then
+				clearLockedTarget()
+			else
+				setLockedTarget(candidatePlayer)
+			end
+			return
+		end
+		if State.LockedTargetPlayer then
+			clearLockedTarget()
+		elseif targetLockNotifyEnabled then
+			showNotifier("Target lock", "No valid target found.")
+		end
+	end
+
+	local function validateLockedTarget()
+		local lockedPlayer = State.LockedTargetPlayer
+		if not lockedPlayer then
+			updateLockStatusLabel()
+			return
+		end
+		local lockedPart = getCharacterPart(lockedPlayer, Settings.AimPart)
+		local lockedRoot = getRoot(lockedPlayer)
+		if not lockedPart or not lockedRoot or not isEnemy(lockedPlayer) then
+			clearLockedTarget(true)
+			return
+		end
+		if not Settings.TargetLockSticky then
+			local validDistance = withinDistance(lockedRoot, Settings.MaxAimlockDistance)
+			local validVisibility = not Settings.VisibleCheck or isVisible(lockedPart)
+			if not validDistance or not validVisibility then
+				clearLockedTarget(true)
+				return
+			end
+		end
+		updateLockStatusLabel()
+	end
+
+	updateLockStatusLabel()
 	updateTopRightLayout()
 
 	connect(UserInputService.InputBegan, function(input, gameProcessed)
 		if not JuliaRunning then
 			return
 		end
+		if waitingForLockKey then
+			if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
+				waitingForLockKey = false
+				if input.KeyCode ~= Enum.KeyCode.Escape then
+					Settings.TargetLockKey = input.KeyCode
+				end
+				applyLockKeyButtonText()
+			end
+			return
+		end
 		if input.UserInputType == Settings.CamlockHoldKey then
 			State.HoldingCamlock = true
+			if panelAutoHideOnAim and panel.Visible then
+				panel.Visible = false
+				panelAutoHiddenByAim = true
+			end
+			return
+		end
+		if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Settings.TargetLockKey then
+			toggleTargetLock()
 			return
 		end
 		if gameProcessed then
@@ -3047,16 +4664,52 @@ local function createMainGui()
 		end
 		if input.UserInputType == Settings.CamlockHoldKey then
 			State.HoldingCamlock = false
+			if panelAutoHiddenByAim then
+				panel.Visible = true
+				panelAutoHiddenByAim = false
+			end
 		end
 	end)
 
+	connect(UserInputService.JumpRequest, function()
+		if not JuliaRunning or not infiniteJumpEnabled then
+			return
+		end
+		local humanoid = getHumanoid(LocalPlayer.Character)
+		if humanoid then
+			humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+		end
+	end)
+
+	connect(LocalPlayer.Idled, function()
+		if not antiAFKEnabled then
+			return
+		end
+		pcall(function()
+			VirtualUser:CaptureController()
+			VirtualUser:ClickButton2(Vector2.new())
+		end)
+	end)
+
 	connect(Players.PlayerRemoving, function(player)
+		if player == State.LockedTargetPlayer then
+			clearLockedTarget(true)
+		end
 		removeESP(player)
 		removeRadarBlip(player)
 	end)
 
 	connect(LocalPlayer.CharacterAdded, function()
 		task.wait(0.5)
+		captureMovementDefaults()
+		if zoomUnlockEnabled then
+			LocalPlayer.CameraMinZoomDistance = 0.5
+			LocalPlayer.CameraMaxZoomDistance = 1000
+		end
+		local camera = Workspace.CurrentCamera
+		if camera and cameraFOVOverride then
+			camera.FieldOfView = cameraFOVOverride
+		end
 		if followerCloneEnabled then
 			destroyFollowerClone()
 			updateFollowerClone(os.clock())
@@ -3108,7 +4761,9 @@ local function createMainGui()
 		fpsFrameCount += 1
 		if now - State.LastCounterUpdate >= Settings.CounterUpdateRate then
 			State.LastCounterUpdate = now
+			validateLockedTarget()
 			keyTimerLabel.Text = getKeyTimeText()
+			watermark.Text = hudClockEnabled and ("Julia Hub | " .. os.date("%H:%M:%S")) or "Julia Hub"
 			if fpsEnabled then
 				fpsValue = math.floor(fpsFrameCount / math.max(now - fpsLastTime, 0.001))
 				fpsLabel.Text = "FPS: " .. tostring(fpsValue)
@@ -3122,13 +4777,83 @@ local function createMainGui()
 				end)
 				pingLabel.Text = "Ping: " .. pingText
 			end
+			if speedHudEnabled then
+				local localRoot = getLocalRoot()
+				local speedValue = 0
+				if localRoot then
+					local velocity = localRoot.AssemblyLinearVelocity
+					speedValue = math.floor(Vector3.new(velocity.X, 0, velocity.Z).Magnitude + 0.5)
+				end
+				speedLabel.Text = "Speed: " .. tostring(speedValue)
+			end
+			if targetCounterEnabled then
+				local targetCount = 0
+				for _, player in ipairs(Players:GetPlayers()) do
+					if player ~= LocalPlayer and isEnemy(player) then
+						local root = getRoot(player)
+						if root and withinDistance(root, Settings.MaxESPDistance) then
+							targetCount += 1
+						end
+					end
+				end
+				targetCountLabel.Text = "Targets: " .. tostring(targetCount)
+			end
+			if toolHudEnabled or autoEquipToolEnabled then
+				local character = LocalPlayer.Character
+				local counterHumanoid = getHumanoid(character)
+				local equippedTool = character and character:FindFirstChildOfClass("Tool")
+				local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+				local backpackTool = backpack and backpack:FindFirstChildOfClass("Tool")
+				if autoEquipToolEnabled and not equippedTool and backpackTool and counterHumanoid then
+					counterHumanoid:EquipTool(backpackTool)
+					equippedTool = character and character:FindFirstChildOfClass("Tool")
+				end
+				if toolHudEnabled then
+					toolLabel.Text = "Tool: " .. ((equippedTool and equippedTool.Name) or "Hands")
+				end
+			end
+			if directionHudEnabled then
+				directionLabel.Text = "Dir: " .. getCompassDirection()
+			end
 		end
 
 		State.Camera = Workspace.CurrentCamera
+		local currentCamera = State.Camera
+		local localHumanoid = getHumanoid(LocalPlayer.Character)
+		local mousePosition = UserInputService:GetMouseLocation()
+
+		if currentCamera and cameraFOVOverride and math.abs(currentCamera.FieldOfView - cameraFOVOverride) > 0.05 then
+			currentCamera.FieldOfView = cameraFOVOverride
+		end
+		if localHumanoid then
+			if walkSpeedOverride and math.abs(localHumanoid.WalkSpeed - walkSpeedOverride) > 0.05 then
+				localHumanoid.WalkSpeed = walkSpeedOverride
+			end
+			if jumpPowerOverride and math.abs(localHumanoid.JumpPower - jumpPowerOverride) > 0.05 then
+				localHumanoid.JumpPower = jumpPowerOverride
+			end
+			if bunnyHopEnabled and localHumanoid.MoveDirection.Magnitude > 0.05 and localHumanoid.FloorMaterial ~= Enum.Material.Air then
+				localHumanoid.Jump = true
+			end
+		end
+
+		if rainbowAccentEnabled and now - lastRainbowAccentUpdate >= (Settings.LowEndMode and 0.14 or 0.08) then
+			lastRainbowAccentUpdate = now
+			local hue = (now * 0.12) % 1
+			Theme.CurrentAccent = Color3.fromHSV(hue, 0.8, 1)
+			Theme.GradientA = Theme.CurrentAccent
+			Theme.GradientB = Color3.fromHSV((hue + 0.12) % 1, 0.75, 0.9)
+			updateStyle()
+		end
 
 		if now - State.LastESPUpdate >= Settings.ESPUpdateRate then
 			State.LastESPUpdate = now
 			updateESP()
+		end
+
+		if (Settings.BoneESPEnabled or Settings.TracersEnabled) and now - State.LastLineESPUpdate >= Settings.LineESPUpdateRate then
+			State.LastLineESPUpdate = now
+			updateLineESP()
 		end
 
 		radarElapsed += deltaTime
@@ -3140,8 +4865,11 @@ local function createMainGui()
 		if Settings.ShowFOV then
 			if now - State.LastFOVUpdate >= Settings.FOVUpdateRate then
 				State.LastFOVUpdate = now
-				local mousePosition = UserInputService:GetMouseLocation()
-				fovCircle.Size = UDim2.fromOffset(Settings.FOVRadius * 2, Settings.FOVRadius * 2)
+				local visualFOVRadius = Settings.FOVRadius
+				if fovPulseEnabled then
+					visualFOVRadius = math.max(40, Settings.FOVRadius * (1 + 0.08 * math.sin(now * 4)))
+				end
+				fovCircle.Size = UDim2.fromOffset(visualFOVRadius * 2, visualFOVRadius * 2)
 				fovCircle.Position = UDim2.fromOffset(mousePosition.X, mousePosition.Y)
 			end
 			if not fovCircle.Visible then
@@ -3151,6 +4879,33 @@ local function createMainGui()
 			if fovCircle.Visible then
 				fovCircle.Visible = false
 			end
+		end
+
+		if mouseHaloEnabled then
+			mouseHalo.Visible = true
+			local haloSize = 26 + math.floor((math.sin(now * 5) * 0.5 + 0.5) * 8)
+			mouseHalo.Size = UDim2.fromOffset(haloSize, haloSize)
+			mouseHalo.Position = UDim2.fromOffset(mousePosition.X, mousePosition.Y)
+		elseif mouseHalo.Visible then
+			mouseHalo.Visible = false
+		end
+
+		if crosshairSpinEnabled then
+			crosshairHolder.Rotation = (crosshairHolder.Rotation + (deltaTime * 110)) % 360
+		elseif crosshairHolder.Rotation ~= 0 then
+			crosshairHolder.Rotation = 0
+		end
+
+		if watermarkPulseEnabled then
+			local baseWidth = hudClockEnabled and 220 or 160
+			local pulse = math.floor((math.sin(now * 4) * 0.5 + 0.5) * 14)
+			watermark.Size = UDim2.fromOffset(baseWidth + pulse, 32)
+		end
+
+		if radarSpinEnabled then
+			radarFrame.Rotation = (now * 28) % 360
+		elseif radarFrame.Rotation ~= 0 then
+			radarFrame.Rotation = 0
 		end
 
 		if Settings.CamlockEnabled and State.HoldingCamlock then
@@ -3163,7 +4918,11 @@ local function createMainGui()
 		if spinEnabled and isSpinRigReady() then
 			local spinRoot = getLocalSpinRoot()
 			if spinRoot then
-				spinRoot.CFrame = spinRoot.CFrame * CFrame.Angles(0, math.rad(spinSpeed * deltaTime), 0)
+				local effectiveSpinSpeed = spinSpeed
+				if spinPulseEnabled then
+					effectiveSpinSpeed = spinSpeed * (0.7 + 0.3 * (0.5 + 0.5 * math.sin(now * 4)))
+				end
+				spinRoot.CFrame = spinRoot.CFrame * CFrame.Angles(0, math.rad(effectiveSpinSpeed * deltaTime * spinDirection), 0)
 			end
 		end
 
@@ -3174,6 +4933,12 @@ local function createMainGui()
 
 	screenGui.Destroying:Connect(function()
 		destroyFollowerClone()
+		LocalPlayer.CameraMinZoomDistance = defaultMinZoom
+		LocalPlayer.CameraMaxZoomDistance = defaultMaxZoom
+		local camera = Workspace.CurrentCamera
+		if camera then
+			camera.FieldOfView = defaultCameraFOV
+		end
 		Lighting.ClockTime = originalLighting.ClockTime
 		Lighting.Brightness = originalLighting.Brightness
 		Lighting.Ambient = originalLighting.Ambient
@@ -3181,6 +4946,26 @@ local function createMainGui()
 		Lighting.FogEnd = originalLighting.FogEnd
 		Lighting.FogStart = originalLighting.FogStart
 		Lighting.FogColor = originalLighting.FogColor
+		mouseHalo.Visible = false
+		cinematicTop.Visible = false
+		cinematicBottom.Visible = false
+		radarFrame.Rotation = 0
+		crosshairHolder.Rotation = 0
+		pcall(function()
+			blurEffect:Destroy()
+		end)
+		pcall(function()
+			bloomEffect:Destroy()
+		end)
+		pcall(function()
+			nightVisionEffect:Destroy()
+		end)
+		pcall(function()
+			monochromeEffect:Destroy()
+		end)
+		pcall(function()
+			saturationEffect:Destroy()
+		end)
 		if GLOBAL_ENV.JuliaHubCleanup then
 			GLOBAL_ENV.JuliaHubCleanup()
 		end
