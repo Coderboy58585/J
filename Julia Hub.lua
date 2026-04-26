@@ -75,6 +75,7 @@ local Stats = game:GetService("Stats")
 local Lighting = game:GetService("Lighting")
 local VirtualUser = game:GetService("VirtualUser")
 local Workspace = game:GetService("Workspace")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -156,6 +157,40 @@ local CorrectKeys = {
 	["6M-A8M7-LX3T-QD51"] = { Expires = EXPIRY.SixMonth, Note = "6 Month Key #30" },
 }
 
+local KEY_DURATIONS = {
+	Tester = 60 * 60,
+	SevenDay = 7 * 24 * 60 * 60,
+	OneMonth = 30 * 24 * 60 * 60,
+	SixMonth = 180 * 24 * 60 * 60,
+	OneYear = 365 * 24 * 60 * 60,
+}
+
+local KEY_SYSTEM = {
+	-- Set getgenv().JuliaHubKeyManifestUrl before running, or hard-code your raw GitHub URL here.
+	RemoteManifestUrl = tostring(rawget(GLOBAL_ENV, "JuliaHubKeyManifestUrl") or "https://raw.githubusercontent.com/Coderboy58585/J/main/julia_keys.lua"),
+	ActivationFile = "JuliaHub/key_activations_" .. tostring(LocalPlayer.UserId) .. ".json",
+	RemoteLoaded = false,
+	ActivationsLoaded = false,
+	Activations = rawget(GLOBAL_ENV, "JuliaHubKeyActivations") or {},
+}
+
+local HashedKeys = {}
+
+local LEGACY_EXPIRY_TO_DURATION = {
+	[EXPIRY.Tester] = KEY_DURATIONS.Tester,
+	[EXPIRY.SixMonth] = KEY_DURATIONS.SixMonth,
+	[EXPIRY.OneYear] = KEY_DURATIONS.OneYear,
+}
+
+for _, keyData in pairs(CorrectKeys) do
+	local duration = LEGACY_EXPIRY_TO_DURATION[keyData.Expires]
+	if duration then
+		keyData.DurationSeconds = duration
+		keyData.ActivatesOnUse = true
+		keyData.Expires = nil
+	end
+end
+
 local Settings = {
 	ESPEnabled = true,
 	ESPMode = "Highlight",
@@ -229,6 +264,7 @@ local State = {
 	ActiveKey = nil,
 	ActiveKeyNote = nil,
 	KeyExpiresAt = nil,
+	KeyActivatedAt = nil,
 	LockedTargetPlayer = nil,
 }
 
@@ -311,6 +347,411 @@ local function cleanKey(text)
 		end
 	end
 	return table.concat(result):upper()
+end
+
+local function sha256Hex(message)
+	message = tostring(message or "")
+	local bit = bit32
+	local band = bit.band
+	local bor = bit.bor
+	local bxor = bit.bxor
+	local bnot = bit.bnot
+	local rshift = bit.rshift
+	local lshift = bit.lshift
+	local function add32(...)
+		local result = 0
+		for i = 1, select("#", ...) do
+			result = (result + select(i, ...)) % 4294967296
+		end
+		return result
+	end
+	local function rotr(value, shift)
+		return bor(rshift(value, shift), lshift(value, 32 - shift))
+	end
+	local constants = {
+		0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+		0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+		0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+		0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+		0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+		0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+		0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+		0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+	}
+	local hash = {
+		0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+		0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+	}
+	local bytes = { string.byte(message, 1, #message) }
+	local bitLength = #bytes * 8
+	bytes[#bytes + 1] = 0x80
+	while (#bytes % 64) ~= 56 do
+		bytes[#bytes + 1] = 0
+	end
+	for shift = 7, 0, -1 do
+		bytes[#bytes + 1] = math.floor(bitLength / (2 ^ (shift * 8))) % 256
+	end
+	for chunk = 1, #bytes, 64 do
+		local words = {}
+		for i = 0, 15 do
+			local index = chunk + (i * 4)
+			words[i] = bor(lshift(bytes[index], 24), lshift(bytes[index + 1], 16), lshift(bytes[index + 2], 8), bytes[index + 3])
+		end
+		for i = 16, 63 do
+			local s0 = bxor(rotr(words[i - 15], 7), rotr(words[i - 15], 18), rshift(words[i - 15], 3))
+			local s1 = bxor(rotr(words[i - 2], 17), rotr(words[i - 2], 19), rshift(words[i - 2], 10))
+			words[i] = add32(words[i - 16], s0, words[i - 7], s1)
+		end
+		local a, b, c, d, e, f, g, h = hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7], hash[8]
+		for i = 0, 63 do
+			local s1 = bxor(rotr(e, 6), rotr(e, 11), rotr(e, 25))
+			local ch = bxor(band(e, f), band(bnot(e), g))
+			local temp1 = add32(h, s1, ch, constants[i + 1], words[i])
+			local s0 = bxor(rotr(a, 2), rotr(a, 13), rotr(a, 22))
+			local maj = bxor(band(a, b), band(a, c), band(b, c))
+			local temp2 = add32(s0, maj)
+			h = g
+			g = f
+			f = e
+			e = add32(d, temp1)
+			d = c
+			c = b
+			b = a
+			a = add32(temp1, temp2)
+		end
+		hash[1] = add32(hash[1], a)
+		hash[2] = add32(hash[2], b)
+		hash[3] = add32(hash[3], c)
+		hash[4] = add32(hash[4], d)
+		hash[5] = add32(hash[5], e)
+		hash[6] = add32(hash[6], f)
+		hash[7] = add32(hash[7], g)
+		hash[8] = add32(hash[8], h)
+	end
+	return string.format("%08x%08x%08x%08x%08x%08x%08x%08x", hash[1], hash[2], hash[3], hash[4], hash[5], hash[6], hash[7], hash[8])
+end
+
+local function parseKeyDurationSeconds(value)
+	if value == nil then
+		return nil
+	end
+	if type(value) == "number" then
+		if value == math.huge then
+			return math.huge
+		end
+		return math.max(0, math.floor(value))
+	end
+	local text = tostring(value):lower():gsub("^%s+", ""):gsub("%s+$", "")
+	if text == "" then
+		return nil
+	end
+	if text == "lifetime" or text == "permanent" or text == "forever" or text == "inf" then
+		return math.huge
+	end
+	text = text:gsub("%s+", "")
+	local amountText, unit = text:match("^(%d+%.?%d*)(%a+)$")
+	if not amountText then
+		return tonumber(text)
+	end
+	local amount = tonumber(amountText)
+	if not amount then
+		return nil
+	end
+	local units = {
+		s = 1,
+		sec = 1,
+		second = 1,
+		seconds = 1,
+		m = 60,
+		min = 60,
+		minute = 60,
+		minutes = 60,
+		h = 60 * 60,
+		hr = 60 * 60,
+		hour = 60 * 60,
+		hours = 60 * 60,
+		d = 24 * 60 * 60,
+		day = 24 * 60 * 60,
+		days = 24 * 60 * 60,
+		w = 7 * 24 * 60 * 60,
+		week = 7 * 24 * 60 * 60,
+		weeks = 7 * 24 * 60 * 60,
+		mo = 30 * 24 * 60 * 60,
+		month = 30 * 24 * 60 * 60,
+		months = 30 * 24 * 60 * 60,
+		y = 365 * 24 * 60 * 60,
+		yr = 365 * 24 * 60 * 60,
+		year = 365 * 24 * 60 * 60,
+		years = 365 * 24 * 60 * 60,
+	}
+	local multiplier = units[unit]
+	if not multiplier then
+		return nil
+	end
+	return math.max(0, math.floor(amount * multiplier))
+end
+
+local function normalizeKeyData(data)
+	if type(data) ~= "table" then
+		return {
+			DurationSeconds = parseKeyDurationSeconds(data),
+			ActivatesOnUse = true,
+			Note = "Remote Key",
+		}
+	end
+	local normalized = {}
+	for key, value in pairs(data) do
+		normalized[key] = value
+	end
+	if normalized.Lifetime == true then
+		normalized.Expires = math.huge
+	end
+	if type(normalized.Expires) == "string" then
+		local parsedExpiry = parseKeyDurationSeconds(normalized.Expires)
+		if parsedExpiry == math.huge then
+			normalized.Expires = math.huge
+		end
+	end
+	if normalized.DurationSeconds == nil then
+		normalized.DurationSeconds = parseKeyDurationSeconds(normalized.Duration or normalized.Length or normalized.Time)
+	else
+		normalized.DurationSeconds = parseKeyDurationSeconds(normalized.DurationSeconds)
+	end
+	if normalized.DurationSeconds ~= nil then
+		normalized.ActivatesOnUse = true
+	end
+	normalized.Note = tostring(normalized.Note or normalized.Name or "Remote Key")
+	return normalized
+end
+
+local function canUseKeyActivationFiles()
+	return typeof(isfile) == "function" and typeof(readfile) == "function" and typeof(writefile) == "function"
+end
+
+local function loadKeyActivations()
+	if KEY_SYSTEM.ActivationsLoaded then
+		return
+	end
+	KEY_SYSTEM.ActivationsLoaded = true
+	if type(KEY_SYSTEM.Activations) ~= "table" then
+		KEY_SYSTEM.Activations = {}
+	end
+	if canUseKeyActivationFiles() then
+		local ok, contents = pcall(function()
+			return isfile(KEY_SYSTEM.ActivationFile) and readfile(KEY_SYSTEM.ActivationFile) or nil
+		end)
+		if ok and contents and contents ~= "" then
+			local decodedOk, decoded = pcall(function()
+				return HttpService:JSONDecode(contents)
+			end)
+			if decodedOk and type(decoded) == "table" then
+				KEY_SYSTEM.Activations = decoded
+			end
+		end
+	end
+	GLOBAL_ENV.JuliaHubKeyActivations = KEY_SYSTEM.Activations
+end
+
+local function saveKeyActivations()
+	GLOBAL_ENV.JuliaHubKeyActivations = KEY_SYSTEM.Activations
+	if not canUseKeyActivationFiles() then
+		return
+	end
+	pcall(function()
+		if typeof(isfolder) == "function" and typeof(makefolder) == "function" and not isfolder("JuliaHub") then
+			makefolder("JuliaHub")
+		end
+	end)
+	pcall(function()
+		writefile(KEY_SYSTEM.ActivationFile, HttpService:JSONEncode(KEY_SYSTEM.Activations))
+	end)
+end
+
+local function mergeKeyManifest(manifest)
+	if type(manifest) ~= "table" then
+		return 0
+	end
+	local count = 0
+	local keys = manifest.Keys or manifest.keys or manifest
+	for key, data in pairs(keys) do
+		if type(data) == "table" and type(data.Hash) == "string" then
+			local hash = data.Hash:lower()
+			HashedKeys[hash] = normalizeKeyData(data)
+			HashedKeys[hash].ActivationId = "sha256:" .. hash
+			count += 1
+		elseif type(key) == "string" and key:match("^[a-fA-F0-9][a-fA-F0-9]+$") and #key == 64 then
+			local hash = key:lower()
+			HashedKeys[hash] = normalizeKeyData(data)
+			HashedKeys[hash].ActivationId = "sha256:" .. hash
+			count += 1
+		elseif type(key) == "string" and key ~= "Keys" and key ~= "keys" and key ~= "Revoked" and key ~= "revoked" and key ~= "RevokedHashes" and key ~= "revokedHashes" and key ~= "Meta" and key ~= "meta" then
+			local cleaned = cleanKey(key)
+			if cleaned ~= "" then
+				CorrectKeys[cleaned] = normalizeKeyData(data)
+				count += 1
+			end
+		end
+	end
+	local revoked = manifest.Revoked or manifest.revoked
+	if type(revoked) == "table" then
+		for key, revokedValue in pairs(revoked) do
+			local revokedKey = type(key) == "number" and revokedValue or key
+			local cleaned = cleanKey(revokedKey)
+			if cleaned ~= "" then
+				CorrectKeys[cleaned] = { Revoked = true, Note = "Revoked Key" }
+			end
+		end
+	end
+	local revokedHashes = manifest.RevokedHashes or manifest.revokedHashes
+	if type(revokedHashes) == "table" then
+		for hash, revokedValue in pairs(revokedHashes) do
+			local revokedHash = type(hash) == "number" and revokedValue or hash
+			revokedHash = tostring(revokedHash or ""):lower()
+			if revokedHash:match("^[a-f0-9]+$") and #revokedHash == 64 then
+				HashedKeys[revokedHash] = { Revoked = true, Note = "Revoked Key", ActivationId = "sha256:" .. revokedHash }
+			end
+		end
+	end
+	return count
+end
+
+local function resolveKeyData(key)
+	local cleaned = cleanKey(key)
+	local keyData = CorrectKeys[cleaned]
+	if keyData then
+		return keyData
+	end
+	local hash = sha256Hex(cleaned)
+	keyData = HashedKeys[hash]
+	if keyData then
+		keyData.ActivationId = keyData.ActivationId or ("sha256:" .. hash)
+		return keyData
+	end
+	return nil
+end
+
+local function decodeKeyManifest(source)
+	source = tostring(source or "")
+	if source == "" then
+		return nil
+	end
+	if source:match("^%s*{") then
+		local ok, decoded = pcall(function()
+			return HttpService:JSONDecode(source)
+		end)
+		if ok and type(decoded) == "table" then
+			return decoded
+		end
+	end
+	local loader = typeof(loadstring) == "function" and loadstring or nil
+	if not loader and typeof(load) == "function" then
+		loader = load
+	end
+	if not loader then
+		return nil
+	end
+	local loadedOk, chunk = pcall(loader, source)
+	if not loadedOk or type(chunk) ~= "function" then
+		return nil
+	end
+	local runOk, manifest = pcall(chunk)
+	return runOk and manifest or nil
+end
+
+local function fetchKeyManifestSource(url)
+	local source = nil
+	pcall(function()
+		source = game:HttpGet(url)
+	end)
+	if source and source ~= "" then
+		return source
+	end
+	pcall(function()
+		source = HttpService:GetAsync(url)
+	end)
+	return source
+end
+
+local function loadExternalKeyManifest(force)
+	if KEY_SYSTEM.RemoteLoaded and not force then
+		return true, 0
+	end
+	KEY_SYSTEM.RemoteLoaded = true
+	local url = tostring(rawget(GLOBAL_ENV, "JuliaHubKeyManifestUrl") or KEY_SYSTEM.RemoteManifestUrl or "")
+	KEY_SYSTEM.RemoteManifestUrl = url
+	if url == "" then
+		return false, "no remote key manifest configured"
+	end
+	local source = fetchKeyManifestSource(url)
+	local manifest = decodeKeyManifest(source)
+	if not manifest then
+		return false, "remote key manifest failed to load"
+	end
+	return true, mergeKeyManifest(manifest)
+end
+
+local function getKeyDurationSeconds(keyData)
+	if not keyData then
+		return nil
+	end
+	if keyData.DurationSeconds ~= nil then
+		return parseKeyDurationSeconds(keyData.DurationSeconds)
+	end
+	return parseKeyDurationSeconds(keyData.Duration or keyData.Length or keyData.Time)
+end
+
+local function activateKey(key, keyData)
+	local now = os.time()
+	if not keyData then
+		return false, "Invalid key."
+	end
+	if keyData.Revoked then
+		return false, "This key has been revoked."
+	end
+	if keyData.Expires == math.huge or keyData.Lifetime == true then
+		return true, nil, math.huge, nil
+	end
+	local duration = getKeyDurationSeconds(keyData)
+	if duration == math.huge then
+		return true, nil, math.huge, nil
+	end
+	if duration and duration > 0 then
+		loadKeyActivations()
+		local activationId = tostring(keyData.ActivationId or key)
+		local record = KEY_SYSTEM.Activations[activationId]
+		if type(record) ~= "table" then
+			record = {}
+			KEY_SYSTEM.Activations[activationId] = record
+		end
+		local activatedAt = tonumber(record.ActivatedAt)
+		local storedDuration = tonumber(record.DurationSeconds)
+		if storedDuration and storedDuration > 0 then
+			duration = storedDuration
+		end
+		if not activatedAt then
+			activatedAt = now
+			record.ActivatedAt = activatedAt
+			record.DurationSeconds = duration
+			record.Note = tostring(keyData.Note or "Julia Key")
+			saveKeyActivations()
+		end
+		local expiresAt = activatedAt + duration
+		if now >= expiresAt then
+			return false, "This key has expired."
+		end
+		return true, nil, expiresAt, activatedAt
+	end
+	if keyData.Expires then
+		local expiresAt = tonumber(keyData.Expires)
+		if not expiresAt then
+			return false, "This key has invalid expiry data."
+		end
+		if expiresAt and now >= expiresAt then
+			return false, "This key has expired."
+		end
+		return true, nil, expiresAt, nil
+	end
+	return false, "This key is missing duration data."
 end
 
 local function pad2(number)
@@ -1364,7 +1805,11 @@ local function createKeyGui()
 		end
 		checking = true
 		local enteredKey = cleanKey(keyBox.Text)
-		local keyData = CorrectKeys[enteredKey]
+		local keyData = resolveKeyData(enteredKey)
+		if not keyData then
+			loadExternalKeyManifest(true)
+			keyData = resolveKeyData(enteredKey)
+		end
 		if not keyData then
 			statusLabel.TextColor3 = Theme.Bad
 			statusLabel.Text = "Invalid key. Try again."
@@ -1372,19 +1817,20 @@ local function createKeyGui()
 			checking = false
 			return
 		end
-		local now = os.time()
-		if keyData.Expires ~= math.huge and now >= keyData.Expires then
+		local accepted, errorMessage, expiresAt, activatedAt = activateKey(enteredKey, keyData)
+		if not accepted then
 			statusLabel.TextColor3 = Theme.Bad
-			statusLabel.Text = "This key has expired."
+			statusLabel.Text = errorMessage or "This key cannot be used."
 			keyBox.Text = ""
 			checking = false
 			return
 		end
 		State.ActiveKey = enteredKey
-		State.ActiveKeyNote = keyData.Note
-		State.KeyExpiresAt = keyData.Expires
+		State.ActiveKeyNote = keyData.Note or "Julia Key"
+		State.KeyExpiresAt = expiresAt
+		State.KeyActivatedAt = activatedAt
 		statusLabel.TextColor3 = Theme.Good
-		statusLabel.Text = keyData.Note .. " accepted.\n" .. getKeyTimeText()
+		statusLabel.Text = State.ActiveKeyNote .. " accepted.\n" .. getKeyTimeText()
 		task.wait(0.35)
 		keyGui.Enabled = false
 		flashPentagram()
@@ -5650,7 +6096,7 @@ local function createMainGui()
 		appendConsoleLine("Movement: noclip clip float unfloat freeze unfreeze nosit")
 		appendConsoleLine("Position: savepos loadpos coords faceup")
 		appendConsoleLine("Tools: tools equip unequip")
-		appendConsoleLine("Info: serverinfo charinfo keytime")
+		appendConsoleLine("Info: serverinfo charinfo keytime keyinfo reloadkeys")
 		return true, tostring(#Cmd.Entries) .. " utility commands ready."
 	end)
 
@@ -5824,6 +6270,22 @@ local function createMainGui()
 
 	registerCommand({ "keytime", "ktl" }, "keytime", "Show key time left.", function()
 		return true, getKeyTimeText()
+	end)
+
+	registerCommand({ "keyinfo", "license" }, "keyinfo", "Show active key details.", function()
+		if not State.ActiveKey then
+			return false, "no active key"
+		end
+		local activatedText = State.KeyActivatedAt and os.date("%Y-%m-%d %H:%M:%S", State.KeyActivatedAt) or "not tracked"
+		return true, tostring(State.ActiveKeyNote or "Julia Key") .. " | activated " .. activatedText .. " | " .. getKeyTimeText()
+	end)
+
+	registerCommand({ "reloadkeys", "refreshkeys" }, "reloadkeys", "Reload remote key manifest.", function()
+		local ok, result = loadExternalKeyManifest(true)
+		if not ok then
+			return false, tostring(result)
+		end
+		return true, "remote keys loaded: " .. tostring(result)
 	end)
 
 	local function executeCommand(text)
@@ -6337,6 +6799,7 @@ local function createMainGui()
 	end)
 end
 
+loadExternalKeyManifest()
 createKeyGui()
 repeat
 	task.wait()
