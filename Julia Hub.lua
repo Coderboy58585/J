@@ -1405,6 +1405,7 @@ local function createMainGui()
 		Name = "JuliaHub",
 		ResetOnSpawn = false,
 		IgnoreGuiInset = true,
+		DisplayOrder = 999,
 		Parent = PlayerGui,
 	})
 
@@ -2025,18 +2026,8 @@ local function createMainGui()
 		Parent = panel,
 	})
 
-	local pageOneButtons = {}
-	local pageTwoButtons = {}
-	local pageThreeButtons = {}
-	local pageFourButtons = {}
-	local pageFiveButtons = {}
-	local pageSixButtons = {}
-	local pageOneDecor = {}
-	local pageTwoDecor = {}
-	local pageThreeDecor = {}
-	local pageFourDecor = {}
-	local pageFiveDecor = {}
-	local pageSixDecor = {}
+	local PageButtons = { {}, {}, {}, {}, {}, {} }
+	local PageDecor = { {}, {}, {}, {}, {}, {} }
 	local activePage = 1
 	local showNotifier
 
@@ -2075,6 +2066,26 @@ local function createMainGui()
 	local targetLockNotifyEnabled = true
 	local waitingForLockKey = false
 	local lockKeyBindButton = nil
+	local Cmd = {
+		Registry = {},
+		Entries = {},
+		OutputLines = {},
+		History = {},
+		AliasCount = 0,
+		Visible = false,
+		MaxLines = 14,
+		Dragging = false,
+	}
+	local CmdUtility = {
+		Noclip = false,
+		NoSit = false,
+		Float = false,
+		Frozen = false,
+		LastNoclipUpdate = 0,
+		FloatPart = nil,
+		SavedCFrame = nil,
+		OriginalCollision = {},
+	}
 	local panelAutoHideOnAim = false
 	local panelAutoHiddenByAim = false
 	local infiniteJumpEnabled = false
@@ -2370,34 +2381,42 @@ local function createMainGui()
 		fovCircleStroke.Color = Theme.CurrentAccent
 		toolLabel.TextColor3 = Theme.Text
 		directionLabel.TextColor3 = Theme.Text
-		for _, button in ipairs(pageOneButtons) do
-			if button and button:IsA("TextButton") then
-				button.BackgroundTransparency = Theme.ButtonTransparency
+		if Cmd.Launcher then
+			Cmd.Launcher.BackgroundColor3 = Theme.CurrentAccent
+			Cmd.Launcher.TextColor3 = Theme.Text
+		end
+		if Cmd.Frame then
+			Cmd.Frame.BackgroundColor3 = Theme.Main
+			Cmd.Frame.BackgroundTransparency = Theme.PanelTransparency
+			local consoleStroke = Cmd.Frame:FindFirstChildOfClass("UIStroke")
+			if consoleStroke then
+				consoleStroke.Color = Theme.CurrentAccent
 			end
 		end
-		for _, button in ipairs(pageTwoButtons) do
-			if button and button:IsA("TextButton") then
-				button.BackgroundTransparency = Theme.ButtonTransparency
-			end
+		if Cmd.TitleLabel then
+			Cmd.TitleLabel.TextColor3 = Theme.Text
 		end
-		for _, button in ipairs(pageThreeButtons) do
-			if button and button:IsA("TextButton") then
-				button.BackgroundTransparency = Theme.ButtonTransparency
-			end
+		if Cmd.HintLabel then
+			Cmd.HintLabel.TextColor3 = Theme.Muted
 		end
-		for _, button in ipairs(pageFourButtons) do
-			if button and button:IsA("TextButton") then
-				button.BackgroundTransparency = Theme.ButtonTransparency
-			end
+		if Cmd.OutputLabel then
+			Cmd.OutputLabel.TextColor3 = Theme.Text
 		end
-		for _, button in ipairs(pageFiveButtons) do
-			if button and button:IsA("TextButton") then
-				button.BackgroundTransparency = Theme.ButtonTransparency
-			end
+		if Cmd.InputBox then
+			Cmd.InputBox.BackgroundColor3 = Theme.Button
+			Cmd.InputBox.BackgroundTransparency = Theme.ButtonTransparency
+			Cmd.InputBox.TextColor3 = Theme.Text
 		end
-		for _, button in ipairs(pageSixButtons) do
-			if button and button:IsA("TextButton") then
-				button.BackgroundTransparency = Theme.ButtonTransparency
+		if Cmd.CloseButton then
+			Cmd.CloseButton.BackgroundColor3 = Theme.Button
+			Cmd.CloseButton.BackgroundTransparency = Theme.ButtonTransparency
+			Cmd.CloseButton.TextColor3 = Theme.Text
+		end
+		for _, pageButtons in ipairs(PageButtons) do
+			for _, button in ipairs(pageButtons) do
+				if button and button:IsA("TextButton") then
+					button.BackgroundTransparency = Theme.ButtonTransparency
+				end
 			end
 		end
 		mouseHaloStroke.Color = Theme.CurrentAccent
@@ -2429,25 +2448,9 @@ local function createMainGui()
 	end
 
 	local function registerPageDecor(instance, page)
-		if page == 6 then
-			table.insert(pageSixDecor, instance)
-			instance.Visible = activePage == 6
-		elseif page == 5 then
-			table.insert(pageFiveDecor, instance)
-			instance.Visible = activePage == 5
-		elseif page == 4 then
-			table.insert(pageFourDecor, instance)
-			instance.Visible = activePage == 4
-		elseif page == 3 then
-			table.insert(pageThreeDecor, instance)
-			instance.Visible = activePage == 3
-		elseif page == 2 then
-			table.insert(pageTwoDecor, instance)
-			instance.Visible = activePage == 2
-		else
-			table.insert(pageOneDecor, instance)
-			instance.Visible = activePage == 1
-		end
+		page = math.clamp(page or 1, 1, #PageDecor)
+		table.insert(PageDecor[page], instance)
+		instance.Visible = activePage == page
 		return instance
 	end
 
@@ -2473,41 +2476,15 @@ local function createMainGui()
 
 	local function setPage(page)
 		activePage = page
-		for _, button in ipairs(pageOneButtons) do
-			button.Visible = page == 1
+		for pageIndex, pageButtons in ipairs(PageButtons) do
+			for _, button in ipairs(pageButtons) do
+				button.Visible = page == pageIndex
+			end
 		end
-		for _, button in ipairs(pageTwoButtons) do
-			button.Visible = page == 2
-		end
-		for _, button in ipairs(pageThreeButtons) do
-			button.Visible = page == 3
-		end
-		for _, button in ipairs(pageFourButtons) do
-			button.Visible = page == 4
-		end
-		for _, button in ipairs(pageFiveButtons) do
-			button.Visible = page == 5
-		end
-		for _, button in ipairs(pageSixButtons) do
-			button.Visible = page == 6
-		end
-		for _, widget in ipairs(pageOneDecor) do
-			widget.Visible = page == 1
-		end
-		for _, widget in ipairs(pageTwoDecor) do
-			widget.Visible = page == 2
-		end
-		for _, widget in ipairs(pageThreeDecor) do
-			widget.Visible = page == 3
-		end
-		for _, widget in ipairs(pageFourDecor) do
-			widget.Visible = page == 4
-		end
-		for _, widget in ipairs(pageFiveDecor) do
-			widget.Visible = page == 5
-		end
-		for _, widget in ipairs(pageSixDecor) do
-			widget.Visible = page == 6
+		for pageIndex, pageDecor in ipairs(PageDecor) do
+			for _, widget in ipairs(pageDecor) do
+				widget.Visible = page == pageIndex
+			end
 		end
 	end
 
@@ -2542,25 +2519,9 @@ local function createMainGui()
 			AutoButtonColor = false,
 			Parent = panel,
 		}, { corner(8) })
-		if page == 6 then
-			table.insert(pageSixButtons, button)
-			button.Visible = activePage == 6
-		elseif page == 5 then
-			table.insert(pageFiveButtons, button)
-			button.Visible = activePage == 5
-		elseif page == 4 then
-			table.insert(pageFourButtons, button)
-			button.Visible = activePage == 4
-		elseif page == 3 then
-			table.insert(pageThreeButtons, button)
-			button.Visible = activePage == 3
-		elseif page == 2 then
-			table.insert(pageTwoButtons, button)
-			button.Visible = activePage == 2
-		else
-			table.insert(pageOneButtons, button)
-			button.Visible = activePage == 1
-		end
+		page = math.clamp(page or 1, 1, #PageButtons)
+		table.insert(PageButtons[page], button)
+		button.Visible = activePage == page
 		connect(button.MouseEnter, function()
 			tween(button, 0.12, {
 				BackgroundColor3 = Theme.ButtonHover,
@@ -3276,8 +3237,9 @@ local function createMainGui()
 			create("UICorner", { CornerRadius = radius }),
 		} or nil)
 	end
+	local OutfitDraw = {}
 
-	local function addJuliaBase(parent)
+	OutfitDraw.Base = function(parent)
 		local shadow = makeDrawPart(parent, "Shadow", UDim2.fromOffset(150, 24), UDim2.fromOffset(24, 204), Color3.fromRGB(0, 0, 0), 299, UDim.new(1, 0))
 		shadow.BackgroundTransparency = 0.55
 		makeDrawPart(parent, "HairBack", UDim2.fromOffset(128, 142), UDim2.fromOffset(31, 18), Color3.fromRGB(55, 28, 75), 300, UDim.new(0, 58))
@@ -3316,7 +3278,7 @@ local function createMainGui()
 		makeDrawPart(parent, "Neck", UDim2.fromOffset(28, 24), UDim2.fromOffset(81, 144), Color3.fromRGB(245, 190, 178), 301, UDim.new(0, 8))
 	end
 
-	local function addDefaultOutfit(parent)
+	OutfitDraw.Default = function(parent)
 		local body = makeDrawPart(parent, "Body", UDim2.fromOffset(106, 72), UDim2.fromOffset(42, 160), Color3.fromRGB(255, 80, 135), 300, UDim.new(0, 26))
 		create("UIStroke", { Color = Color3.fromRGB(150, 35, 85), Thickness = 2, Transparency = 0.1, Parent = body })
 		makeDrawPart(parent, "CollarLeft", UDim2.fromOffset(38, 12), UDim2.fromOffset(59, 163), Color3.fromRGB(255, 240, 245), 303, UDim.new(0, 8), 18)
@@ -3339,7 +3301,7 @@ local function createMainGui()
 		})
 	end
 
-	local function addBeachOutfit(parent)
+	OutfitDraw.Beach = function(parent)
 		local leftArm = makeDrawPart(parent, "LeftArm", UDim2.fromOffset(24, 66), UDim2.fromOffset(30, 158), Color3.fromRGB(255, 214, 199), 299, UDim.new(0, 16), 10)
 		local rightArm = makeDrawPart(parent, "RightArm", UDim2.fromOffset(24, 66), UDim2.fromOffset(136, 158), Color3.fromRGB(255, 214, 199), 299, UDim.new(0, 16), -10)
 		leftArm.BackgroundTransparency = 0.02
@@ -3375,7 +3337,7 @@ local function createMainGui()
 		})
 	end
 
-	local function addPlayfulOutfit(parent)
+	OutfitDraw.Playful = function(parent)
 		local body = makeDrawPart(parent, "Body", UDim2.fromOffset(106, 72), UDim2.fromOffset(42, 160), Color3.fromRGB(245, 95, 165), 300, UDim.new(0, 26))
 		create("UIStroke", { Color = Color3.fromRGB(160, 45, 115), Thickness = 2, Transparency = 0.1, Parent = body })
 		makeDrawPart(parent, "ShoulderLeft", UDim2.fromOffset(44, 14), UDim2.fromOffset(48, 160), Color3.fromRGB(255, 185, 220), 304, UDim.new(0, 10), 12)
@@ -3408,7 +3370,7 @@ local function createMainGui()
 		})
 	end
 
-	local function addMilitaryOutfit(parent)
+	OutfitDraw.Military = function(parent)
 		local body = makeDrawPart(parent, "Body", UDim2.fromOffset(108, 78), UDim2.fromOffset(41, 158), Color3.fromRGB(72, 105, 65), 300, UDim.new(0, 24))
 		create("UIStroke", { Color = Color3.fromRGB(38, 60, 38), Thickness = 2, Transparency = 0.1, Parent = body })
 		makeDrawPart(parent, "HatTop", UDim2.fromOffset(74, 20), UDim2.fromOffset(58, 26), Color3.fromRGB(72, 105, 65), 309, UDim.new(0, 12))
@@ -3433,7 +3395,7 @@ local function createMainGui()
 		})
 	end
 
-	local function addInspiredOutfit(parent)
+	OutfitDraw.Inspired = function(parent)
 		local coat = makeDrawPart(parent, "GreenCoat", UDim2.fromOffset(114, 80), UDim2.fromOffset(38, 156), Color3.fromRGB(55, 100, 78), 300, UDim.new(0, 20))
 		create("UIStroke", { Color = Color3.fromRGB(30, 60, 45), Thickness = 2, Transparency = 0.1, Parent = coat })
 		makeDrawPart(parent, "Turtleneck", UDim2.fromOffset(42, 38), UDim2.fromOffset(74, 148), Color3.fromRGB(20, 20, 24), 304, UDim.new(0, 10))
@@ -3460,7 +3422,7 @@ local function createMainGui()
 		})
 	end
 
-	local function addTeasingOutfit(parent)
+	OutfitDraw.Teasing = function(parent)
 		local body = makeDrawPart(parent, "Body", UDim2.fromOffset(106, 72), UDim2.fromOffset(42, 160), Color3.fromRGB(220, 70, 135), 300, UDim.new(0, 26))
 		create("UIStroke", { Color = Color3.fromRGB(135, 30, 85), Thickness = 2, Transparency = 0.1, Parent = body })
 		makeDrawPart(parent, "OffShoulderLeft", UDim2.fromOffset(44, 13), UDim2.fromOffset(47, 161), Color3.fromRGB(255, 185, 220), 304, UDim.new(0, 10), 14)
@@ -3495,7 +3457,7 @@ local function createMainGui()
 		})
 	end
 
-	local function addMaidOutfit(parent)
+	OutfitDraw.Maid = function(parent)
 		local dress = makeDrawPart(parent, "MaidDress", UDim2.fromOffset(108, 76), UDim2.fromOffset(41, 160), Color3.fromRGB(35, 35, 45), 300, UDim.new(0, 24))
 		create("UIStroke", { Color = Color3.fromRGB(15, 15, 22), Thickness = 2, Transparency = 0.1, Parent = dress })
 		makeDrawPart(parent, "Apron", UDim2.fromOffset(62, 62), UDim2.fromOffset(64, 166), Color3.fromRGB(245, 245, 250), 304, UDim.new(0, 18))
@@ -3521,7 +3483,7 @@ local function createMainGui()
 		})
 	end
 
-	local function addArmsUpOutfit(parent)
+	OutfitDraw.ArmsUp = function(parent)
 		local torso = makeDrawPart(parent, "SleevelessTop", UDim2.fromOffset(94, 76), UDim2.fromOffset(48, 160), Color3.fromRGB(125, 80, 210), 300, UDim.new(0, 24))
 		create("UIStroke", { Color = Color3.fromRGB(70, 40, 145), Thickness = 2, Transparency = 0.1, Parent = torso })
 		makeDrawPart(parent, "RaisedArmLeft", UDim2.fromOffset(22, 82), UDim2.fromOffset(34, 97), Color3.fromRGB(255, 214, 199), 304, UDim.new(0, 15), -28)
@@ -3547,7 +3509,7 @@ local function createMainGui()
 		})
 	end
 
-	local function addLatexOutfit(parent)
+	OutfitDraw.Latex = function(parent)
 		local body = makeDrawPart(parent, "LatexBody", UDim2.fromOffset(106, 72), UDim2.fromOffset(42, 160), Color3.fromRGB(18, 18, 24), 300, UDim.new(0, 26))
 		create("UIStroke", {
 			Color = Color3.fromRGB(120, 120, 145),
@@ -3579,7 +3541,7 @@ local function createMainGui()
 		})
 	end
 
-	local function addCowprintOutfit(parent)
+	OutfitDraw.Cowprint = function(parent)
 		local body = makeDrawPart(parent, "CowprintTopBase", UDim2.fromOffset(106, 72), UDim2.fromOffset(42, 160), Color3.fromRGB(250, 250, 245), 300, UDim.new(0, 26))
 		create("UIStroke", {
 			Color = Color3.fromRGB(55, 55, 55),
@@ -3628,27 +3590,27 @@ local function createMainGui()
 			ZIndex = 300,
 			Parent = screenGui,
 		})
-		addJuliaBase(animeGirl)
+		OutfitDraw.Base(animeGirl)
 		if animeOutfitIndex == 1 then
-			addDefaultOutfit(animeGirl)
+			OutfitDraw.Default(animeGirl)
 		elseif animeOutfitIndex == 2 then
-			addBeachOutfit(animeGirl)
+			OutfitDraw.Beach(animeGirl)
 		elseif animeOutfitIndex == 3 then
-			addPlayfulOutfit(animeGirl)
+			OutfitDraw.Playful(animeGirl)
 		elseif animeOutfitIndex == 4 then
-			addMilitaryOutfit(animeGirl)
+			OutfitDraw.Military(animeGirl)
 		elseif animeOutfitIndex == 5 then
-			addInspiredOutfit(animeGirl)
+			OutfitDraw.Inspired(animeGirl)
 		elseif animeOutfitIndex == 6 then
-			addTeasingOutfit(animeGirl)
+			OutfitDraw.Teasing(animeGirl)
 		elseif animeOutfitIndex == 7 then
-			addMaidOutfit(animeGirl)
+			OutfitDraw.Maid(animeGirl)
 		elseif animeOutfitIndex == 8 then
-			addArmsUpOutfit(animeGirl)
+			OutfitDraw.ArmsUp(animeGirl)
 		elseif animeOutfitIndex == 9 then
-			addLatexOutfit(animeGirl)
+			OutfitDraw.Latex(animeGirl)
 		else
-			addCowprintOutfit(animeGirl)
+			OutfitDraw.Cowprint(animeGirl)
 		end
 	end
 
@@ -4622,6 +4584,1347 @@ local function createMainGui()
 		updateLockStatusLabel()
 	end
 
+	local function applyZoomUnlockState()
+		if zoomUnlockEnabled then
+			LocalPlayer.CameraMinZoomDistance = 0.5
+			LocalPlayer.CameraMaxZoomDistance = 1000
+		else
+			LocalPlayer.CameraMinZoomDistance = defaultMinZoom
+			LocalPlayer.CameraMaxZoomDistance = defaultMaxZoom
+		end
+	end
+
+	local function initCommandConsole()
+	local commandDragHandle = create("Frame", {
+		Name = "CommandDragHandle",
+		Size = UDim2.new(1, 0, 0, 34),
+		BackgroundTransparency = 1,
+		Active = true,
+		ZIndex = 821,
+		Parent = screenGui,
+	})
+
+	Cmd.Frame = create("Frame", {
+		Name = "CommandConsole",
+		AnchorPoint = Vector2.new(1, 1),
+		Size = UDim2.fromOffset(380, 250),
+		Position = UDim2.new(1, -12, 1, -72),
+		BackgroundColor3 = Theme.Main,
+		BackgroundTransparency = Theme.PanelTransparency,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 820,
+		Parent = screenGui,
+	}, {
+		corner(10),
+		stroke(Theme.CurrentAccent, 1.5, 0.25),
+	})
+	commandDragHandle.Parent = Cmd.Frame
+
+	Cmd.TitleLabel = create("TextLabel", {
+		Name = "CommandTitle",
+		Size = UDim2.new(1, -84, 0, 20),
+		Position = UDim2.fromOffset(12, 8),
+		BackgroundTransparency = 1,
+		Text = "Julia Commands",
+		TextColor3 = Theme.Text,
+		TextSize = 15,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 821,
+		Parent = Cmd.Frame,
+	})
+
+	Cmd.HintLabel = create("TextLabel", {
+		Name = "CommandHint",
+		Size = UDim2.new(1, -84, 0, 14),
+		Position = UDim2.fromOffset(12, 24),
+		BackgroundTransparency = 1,
+		Text = "type ;help",
+		TextColor3 = Theme.Muted,
+		TextSize = 11,
+		Font = Enum.Font.Gotham,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 821,
+		Parent = Cmd.Frame,
+	})
+
+	Cmd.CloseButton = create("TextButton", {
+		Name = "CommandClose",
+		Size = UDim2.fromOffset(56, 24),
+		Position = UDim2.new(1, -66, 0, 8),
+		BackgroundColor3 = Theme.Button,
+		BackgroundTransparency = Theme.ButtonTransparency,
+		BorderSizePixel = 0,
+		Text = "Hide",
+		TextColor3 = Theme.Text,
+		TextSize = 12,
+		Font = Enum.Font.GothamBold,
+		AutoButtonColor = false,
+		ZIndex = 821,
+		Parent = Cmd.Frame,
+	}, {
+		corner(8),
+	})
+
+	local commandOutputFrame = create("Frame", {
+		Name = "CommandOutputFrame",
+		Size = UDim2.new(1, -24, 1, -94),
+		Position = UDim2.fromOffset(12, 44),
+		BackgroundColor3 = Color3.fromRGB(12, 12, 16),
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+		ZIndex = 821,
+		Parent = Cmd.Frame,
+	}, {
+		corner(8),
+	})
+
+	Cmd.OutputLabel = create("TextLabel", {
+		Name = "CommandOutput",
+		Size = UDim2.new(1, -12, 1, -12),
+		Position = UDim2.fromOffset(6, 6),
+		BackgroundTransparency = 1,
+		Text = "",
+		TextColor3 = Theme.Text,
+		TextSize = 12,
+		Font = Enum.Font.Gotham,
+		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 822,
+		Parent = commandOutputFrame,
+	})
+
+	Cmd.InputBox = create("TextBox", {
+		Name = "CommandInput",
+		Size = UDim2.new(1, -24, 0, 32),
+		Position = UDim2.new(0, 12, 1, -44),
+		BackgroundColor3 = Theme.Button,
+		BackgroundTransparency = Theme.ButtonTransparency,
+		BorderSizePixel = 0,
+		Text = "",
+		PlaceholderText = ";help | ;noclip | ;coords",
+		PlaceholderColor3 = Theme.Muted,
+		TextColor3 = Theme.Text,
+		TextSize = 13,
+		Font = Enum.Font.Gotham,
+		ClearTextOnFocus = false,
+		ZIndex = 822,
+		Parent = Cmd.Frame,
+	}, {
+		corner(8),
+	})
+
+	Cmd.Launcher = create("TextButton", {
+		Name = "CommandLauncher",
+		AnchorPoint = Vector2.new(1, 1),
+		Size = UDim2.fromOffset(72, 32),
+		Position = UDim2.new(1, -12, 1, -28),
+		BackgroundColor3 = Theme.CurrentAccent,
+		BackgroundTransparency = 0.15,
+		BorderSizePixel = 0,
+		Text = "Cmd +",
+		TextColor3 = Theme.Text,
+		TextSize = 13,
+		Font = Enum.Font.GothamBold,
+		AutoButtonColor = false,
+		ZIndex = 822,
+		Parent = screenGui,
+	}, {
+		corner(8),
+	})
+
+	local function setConsoleVisible(enabled)
+		Cmd.Visible = enabled
+		if Cmd.Frame then
+			Cmd.Frame.Visible = enabled
+		end
+		if Cmd.Launcher then
+			Cmd.Launcher.Text = enabled and "Cmd -" or "Cmd +"
+		end
+		if enabled and Cmd.InputBox then
+			task.defer(function()
+				if Cmd.InputBox and Cmd.InputBox.Parent then
+					Cmd.InputBox:CaptureFocus()
+				end
+			end)
+		end
+	end
+
+	local function appendConsoleLine(text)
+		table.insert(Cmd.OutputLines, tostring(text))
+		while #Cmd.OutputLines > Cmd.MaxLines do
+			table.remove(Cmd.OutputLines, 1)
+		end
+		if Cmd.OutputLabel then
+			Cmd.OutputLabel.Text = table.concat(Cmd.OutputLines, "\n")
+		end
+	end
+
+	local function normalizeCommandToken(text)
+		return tostring(text or ""):lower():gsub("^%s+", ""):gsub("%s+$", ""):gsub("[%s%p_]+", "")
+	end
+
+	local function splitCommandWords(text)
+		local words = {}
+		for token in tostring(text or ""):gmatch("%S+") do
+			table.insert(words, token)
+		end
+		return words
+	end
+
+	local function parseToggleValue(token, currentValue)
+		local normalized = tostring(token or ""):lower()
+		if normalized == "" then
+			return not currentValue
+		end
+		if normalized == "on" or normalized == "true" or normalized == "1" or normalized == "yes" or normalized == "enable" or normalized == "enabled" or normalized == "open" or normalized == "show" or normalized == "start" then
+			return true
+		end
+		if normalized == "off" or normalized == "false" or normalized == "0" or normalized == "no" or normalized == "disable" or normalized == "disabled" or normalized == "close" or normalized == "hide" or normalized == "stop" then
+			return false
+		end
+		return nil
+	end
+
+	local function registerCommand(names, usage, description, handler)
+		local entry = {
+			Names = names,
+			Usage = usage,
+			Description = description,
+			Handler = handler,
+		}
+		table.insert(Cmd.Entries, entry)
+		for _, alias in ipairs(names) do
+			Cmd.Registry[normalizeCommandToken(alias)] = entry
+			Cmd.AliasCount += 1
+		end
+	end
+
+	--[[ Disabled duplicated UI-command mirror. The active console now registers utility-only commands below.
+	registerCommand({ "help", "cmdhelp", "?" }, "help [command]", "Show command help.", function(args)
+		local topic = normalizeCommandToken(args[2])
+		if topic ~= "" then
+			local entry = Cmd.Registry[topic]
+			if not entry then
+				return false, "unknown command"
+			end
+			return true, entry.Usage .. " - " .. entry.Description
+		end
+		appendConsoleLine("Core: help commands aliases history clear page notify echo")
+		appendConsoleLine("Aim: esp espmode camlock hardlock fovradius aimdistance aimpart softsmooth")
+		appendConsoleLine("ESP: names teamcheck visiblecheck bones bonethickness tracers tracerorigin tracerthickness")
+		appendConsoleLine("Style: gradient color panelalpha buttonalpha watermarkalpha daynight fullbright sky crosshair")
+		appendConsoleLine("HUD: fpshud pinghud speedhud targethud lockhud toolhud directionhud hudclock")
+		appendConsoleLine("Fun: spin spinspeed spindir clone clonegap animegirl outfit rainbowaccent dajjal")
+		appendConsoleLine("FX: blur bloom nightvision monochrome saturation cinematicbars mousehalo crosshairspin radarspin")
+		appendConsoleLine("Utility: targetlock lockname clearlock infjump bunnyhop antiafk zoomunlock walkspeed jumppower camfov")
+		return true, "registered " .. tostring(#Cmd.Entries) .. " commands with " .. tostring(Cmd.AliasCount) .. " aliases."
+	end)
+
+	registerCommand({ "commands", "cmds", "list" }, "commands", "Show the primary command names.", function()
+		local primary = {}
+		for _, entry in ipairs(Cmd.Entries) do
+			table.insert(primary, entry.Names[1])
+		end
+		table.sort(primary)
+		appendConsoleLine(table.concat(primary, ", "))
+		return true, tostring(#primary) .. " primary commands."
+	end)
+
+	registerCommand({ "aliases", "aliascount" }, "aliases", "Show alias count.", function()
+		return true, tostring(Cmd.AliasCount) .. " aliases registered."
+	end)
+
+	registerCommand({ "history", "recent" }, "history", "Show recent entered commands.", function()
+		if #Cmd.History == 0 then
+			return true, "no command history yet."
+		end
+		local startIndex = math.max(1, #Cmd.History - 5)
+		for index = startIndex, #Cmd.History do
+			appendConsoleLine(Cmd.History[index])
+		end
+		return true, "showing recent commands."
+	end)
+
+	registerCommand({ "clear", "cls", "flush" }, "clear", "Clear console output.", function()
+		table.clear(Cmd.OutputLines)
+		Cmd.OutputLabel.Text = ""
+		return true, "console cleared."
+	end)
+
+	registerCommand({ "echo", "sayline" }, "echo <text>", "Echo text into the console.", function(args)
+		local message = table.concat(args, " ", 2)
+		if message == "" then
+			return false, "text required"
+		end
+		return true, message
+	end)
+
+	registerCommand({ "console", "cmdbar", "terminal" }, "console [open/close]", "Toggle the command console.", function(args)
+		local nextValue = parseToggleValue(args[2], Cmd.Visible)
+		if nextValue == nil then
+			return false, "use open/close/on/off"
+		end
+		setConsoleVisible(nextValue)
+		return true, "console: " .. (nextValue and "OPEN" or "CLOSED")
+	end)
+
+	registerCommand({ "page", "menu", "tab" }, "page <1-6|main|style|fun|extras|utility|chaos>", "Switch visible page.", function(args)
+		local page = setPageByToken(args[2] or "")
+		if not page then
+			return false, "invalid page"
+		end
+		return true, "page: " .. tostring(page)
+	end)
+
+	registerCommand({ "notify", "toast", "popup" }, "notify <text>", "Show a local notification.", function(args)
+		local message = table.concat(args, " ", 2)
+		if message == "" then
+			return false, "text required"
+		end
+		showNotifier("Julia Commands", message)
+		return true, "notification sent."
+	end)
+
+	registerCommand({ "keytime", "ktl", "keyleft" }, "keytime", "Show remaining key time.", function()
+		return true, getKeyTimeText()
+	end)
+
+	registerCommand({ "rejoin", "serverhop", "rj" }, "rejoin", "Rejoin the current server.", function()
+		TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+		return true, "rejoining..."
+	end)
+
+	registerCommand({ "quickreset", "resetme", "die" }, "quickreset", "Reset your character.", function()
+		local humanoid = getHumanoid(LocalPlayer.Character)
+		if not humanoid then
+			return false, "character not ready"
+		end
+		humanoid.Health = 0
+		return true, "resetting character."
+	end)
+
+	registerCommand({ "espmode", "modeesp", "boxmode" }, "espmode <highlight/2dbox>", "Switch ESP mode.", function(args)
+		local wanted = normalizeCommandToken(args[2])
+		if wanted == "highlight" then
+			Settings.ESPMode = "Highlight"
+		elseif wanted == "2dbox" or wanted == "box" or wanted == "boxesp" then
+			Settings.ESPMode = "2D Box"
+		else
+			return false, "use highlight or 2dbox"
+		end
+		applyPerformanceMode()
+		return true, "esp mode: " .. Settings.ESPMode
+	end)
+
+	registerCommand({ "aimpart", "hitpart", "targetpart" }, "aimpart <head/body>", "Set aim part.", function(args)
+		local wanted = normalizeCommandToken(args[2])
+		if wanted == "head" then
+			Settings.AimPart = "Head"
+		elseif wanted == "body" or wanted == "torso" then
+			Settings.AimPart = "Body"
+		else
+			return false, "use head or body"
+		end
+		return true, "aim part: " .. Settings.AimPart
+	end)
+
+	registerCommand({ "tracerorigin", "tracerfrom", "traceorigin" }, "tracerorigin <bottom/center/top>", "Set tracer origin.", function(args)
+		local wanted = normalizeCommandToken(args[2])
+		if wanted == "bottom" then
+			Settings.TracerOrigin = "Bottom"
+		elseif wanted == "center" or wanted == "middle" then
+			Settings.TracerOrigin = "Center"
+		elseif wanted == "top" then
+			Settings.TracerOrigin = "Top"
+		else
+			return false, "use bottom, center, or top"
+		end
+		return true, "tracer origin: " .. Settings.TracerOrigin
+	end)
+
+	registerCommand({ "daynight", "timeofday", "clockmode" }, "daynight <day/night>", "Toggle day or night.", function(args)
+		local wanted = normalizeCommandToken(args[2])
+		if wanted == "day" then
+			dayMode = true
+		elseif wanted == "night" then
+			dayMode = false
+		else
+			return false, "use day or night"
+		end
+		applyDayNight()
+		return true, "time: " .. (dayMode and "Day" or "Night")
+	end)
+
+	registerCommand({ "sky", "weather", "skymode" }, "sky <clear/sunset/storm/purple/soft>", "Set sky style.", function(args)
+		local label = setSkyModeByName(args[2] or "")
+		if not label then
+			return false, "invalid sky mode"
+		end
+		return true, "sky: " .. label
+	end)
+
+	registerCommand({ "crosshair", "reticle", "xh" }, "crosshair <off/dot/circle/star/diamond/anime>", "Set crosshair style.", function(args)
+		local label = setCrosshairByName(args[2] or "")
+		if not label then
+			return false, "invalid crosshair"
+		end
+		return true, "crosshair: " .. label
+	end)
+
+	registerCommand({ "color", "accent", "theme" }, "color <red/purple/blue/green/pink>", "Set accent color preset.", function(args)
+		local label = setColorPresetByName(args[2] or "")
+		if not label then
+			return false, "invalid color preset"
+		end
+		return true, "color: " .. label
+	end)
+
+	registerCommand({ "radarfacing", "radarface", "rfacing" }, "radarfacing <camera/character>", "Set radar facing mode.", function(args)
+		local wanted = normalizeCommandToken(args[2])
+		if wanted == "camera" then
+			radarConfig.UseCameraFacing = true
+		elseif wanted == "character" or wanted == "body" then
+			radarConfig.UseCameraFacing = false
+		else
+			return false, "use camera or character"
+		end
+		updateRadar()
+		return true, "radar facing: " .. (radarConfig.UseCameraFacing and "Camera" or "Character")
+	end)
+
+	registerCommand({ "spindir", "spindirection", "spinway" }, "spindir <cw/ccw>", "Set spin direction.", function(args)
+		local wanted = normalizeCommandToken(args[2])
+		if wanted == "cw" or wanted == "clockwise" then
+			spinDirection = 1
+		elseif wanted == "ccw" or wanted == "counterclockwise" or wanted == "anticlockwise" then
+			spinDirection = -1
+		else
+			return false, "use cw or ccw"
+		end
+		return true, "spin dir: " .. (spinDirection == 1 and "CW" or "CCW")
+	end)
+
+	registerCommand({ "lockmode", "lockpick", "targetpick" }, "lockmode <crosshair/nearest>", "Set target lock mode.", function(args)
+		local wanted = normalizeCommandToken(args[2])
+		if wanted == "crosshair" then
+			Settings.TargetLockMode = "Crosshair"
+		elseif wanted == "nearest" then
+			Settings.TargetLockMode = "Nearest"
+		else
+			return false, "use crosshair or nearest"
+		end
+		return true, "lock mode: " .. Settings.TargetLockMode
+	end)
+
+	registerCommand({ "lockname", "lockplayer", "target" }, "lockname <player>", "Lock onto a player by name.", function(args)
+		local query = table.concat(args, " ", 2)
+		local player = resolvePlayerQuery(query)
+		if not player then
+			return false, "player not found"
+		end
+		setLockedTarget(player)
+		return true, "locked: " .. getTargetDisplayName(player)
+	end)
+
+	registerCommand({ "clearlock", "unlock", "targetclear" }, "clearlock", "Clear locked target.", function()
+		clearLockedTarget()
+		return true, "locked target cleared."
+	end)
+
+	registerCommand({ "outfit", "animeoutfit", "dress" }, "outfit <name>", "Set anime outfit.", function(args)
+		local label = setOutfitByName(table.concat(args, " ", 2))
+		if not label then
+			return false, "unknown outfit"
+		end
+		return true, "outfit: " .. label
+	end)
+
+	registerCommand({ "resetstyle", "styledefault", "stylereset" }, "resetstyle", "Reset style settings.", function()
+		Theme.CurrentAccent = Color3.fromRGB(255, 40, 40)
+		Theme.GradientA = Color3.fromRGB(255, 40, 40)
+		Theme.GradientB = Color3.fromRGB(60, 90, 160)
+		Theme.PanelTransparency = 0.08
+		Theme.ButtonTransparency = 0
+		Theme.WatermarkTransparency = 0.5
+		Theme.GradientEnabled = false
+		rainbowAccentEnabled = false
+		setCrosshairByName("off")
+		updateStyle()
+		return true, "style reset."
+	end)
+
+	registerCommand({ "resetmovement", "movementreset", "resetmove" }, "resetmovement", "Reset movement overrides.", function()
+		walkSpeedOverride = false
+		jumpPowerOverride = false
+		cameraFOVOverride = false
+		applyZoomUnlockState()
+		applyWalkSpeedSetting()
+		applyJumpPowerSetting()
+		applyCameraFOVSetting()
+		return true, "movement overrides reset."
+	end)
+
+	registerCommand({ "allhud", "hudall", "hudstack" }, "allhud <on/off>", "Toggle all HUD counters.", function(args)
+		local nextValue = parseToggleValue(args[2], fpsEnabled and pingEnabled and speedHudEnabled and targetCounterEnabled)
+		if nextValue == nil then
+			return false, "use on/off"
+		end
+		fpsEnabled = nextValue
+		pingEnabled = nextValue
+		speedHudEnabled = nextValue
+		targetCounterEnabled = nextValue
+		Settings.TargetLockHUD = nextValue
+		toolHudEnabled = nextValue
+		directionHudEnabled = nextValue
+		updateTopRightLayout()
+		return true, "all hud: " .. (nextValue and "ON" or "OFF")
+	end)
+
+	registerCommand({ "allesp", "espall", "combatvisuals" }, "allesp <on/off>", "Toggle esp, names, bones, and tracers together.", function(args)
+		local nextValue = parseToggleValue(args[2], Settings.ESPEnabled and Settings.ShowNames)
+		if nextValue == nil then
+			return false, "use on/off"
+		end
+		Settings.ESPEnabled = nextValue
+		Settings.ShowNames = nextValue
+		Settings.BoneESPEnabled = nextValue
+		Settings.TracersEnabled = nextValue
+		if not nextValue then
+			for _, data in pairs(State.ESPObjects) do
+				if data.Highlight then data.Highlight.Enabled = false end
+				if data.NameGui then data.NameGui.Enabled = false end
+				if data.BoxFrame then data.BoxFrame.Visible = false end
+				if data.TracerLine then data.TracerLine.Visible = false end
+				if data.BoneLines then hideLineFrames(data.BoneLines) end
+			end
+		end
+		return true, "all esp: " .. (nextValue and "ON" or "OFF")
+	end)
+
+	registerCommand({ "allfx", "fxall", "visualfx" }, "allfx <on/off>", "Toggle the page-6 effect stack.", function(args)
+		local nextValue = parseToggleValue(args[2], blurFXEnabled or bloomFXEnabled or nightVisionEnabled)
+		if nextValue == nil then
+			return false, "use on/off"
+		end
+		blurFXEnabled = nextValue
+		bloomFXEnabled = nextValue
+		nightVisionEnabled = nextValue
+		monochromeEnabled = nextValue
+		saturationBoostEnabled = nextValue
+		cinematicBarsEnabled = nextValue
+		mouseHaloEnabled = nextValue
+		crosshairSpinEnabled = nextValue
+		watermarkPulseEnabled = nextValue
+		radarSpinEnabled = nextValue
+		blurEffect.Enabled = blurFXEnabled
+		bloomEffect.Enabled = bloomFXEnabled
+		nightVisionEffect.Enabled = nightVisionEnabled
+		monochromeEffect.Enabled = monochromeEnabled
+		saturationEffect.Enabled = saturationBoostEnabled
+		cinematicTop.Visible = cinematicBarsEnabled
+		cinematicBottom.Visible = cinematicBarsEnabled
+		updateTopRightLayout()
+		return true, "all fx: " .. (nextValue and "ON" or "OFF")
+	end)
+
+	registerCommand({ "dajjal", "summon", "summondajjal" }, "dajjal", "Trigger the scary summon sequence.", function()
+		summonDajjalSequence()
+		return true, "summoning..."
+	end)
+
+	addToggleCommand({ "esp", "toggleesp", "enemyesp" }, "esp [on/off]", "Toggle ESP.", function()
+		return Settings.ESPEnabled
+	end, function(value)
+		Settings.ESPEnabled = value
+		if not value then
+			for _, data in pairs(State.ESPObjects) do
+				if data.Highlight then data.Highlight.Enabled = false end
+				if data.NameGui then data.NameGui.Enabled = false end
+				if data.BoxFrame then data.BoxFrame.Visible = false end
+			end
+		end
+	end)
+	addToggleCommand({ "names", "shownames", "nameesp" }, "names [on/off]", "Toggle name ESP.", function()
+		return Settings.ShowNames
+	end, function(value)
+		Settings.ShowNames = value
+	end)
+	addToggleCommand({ "camlock", "aimlock", "softlock" }, "camlock [on/off]", "Toggle camlock.", function()
+		return Settings.CamlockEnabled
+	end, function(value)
+		Settings.CamlockEnabled = value
+	end)
+	addToggleCommand({ "hardlock", "hardaim", "snaplock" }, "hardlock [on/off]", "Toggle hard lock.", function()
+		return Settings.HardLockEnabled
+	end, function(value)
+		Settings.HardLockEnabled = value
+	end)
+	addToggleCommand({ "showfov", "fov", "fovcircle" }, "showfov [on/off]", "Toggle FOV circle.", function()
+		return Settings.ShowFOV
+	end, function(value)
+		Settings.ShowFOV = value
+		fovCircle.Visible = value
+	end)
+	addToggleCommand({ "teamcheck", "teams", "tc" }, "teamcheck [on/off]", "Toggle team check.", function()
+		return Settings.TeamCheck
+	end, function(value)
+		Settings.TeamCheck = value
+	end)
+	addToggleCommand({ "visiblecheck", "vischeck", "vc" }, "visiblecheck [on/off]", "Toggle visibility check.", function()
+		return Settings.VisibleCheck
+	end, function(value)
+		Settings.VisibleCheck = value
+	end)
+	addToggleCommand({ "bones", "boneesp", "skeleton" }, "bones [on/off]", "Toggle bone ESP.", function()
+		return Settings.BoneESPEnabled
+	end, function(value)
+		Settings.BoneESPEnabled = value
+	end)
+	addToggleCommand({ "tracers", "trace", "lines" }, "tracers [on/off]", "Toggle tracers.", function()
+		return Settings.TracersEnabled
+	end, function(value)
+		Settings.TracersEnabled = value
+		if not value then
+			for _, data in pairs(State.ESPObjects) do
+				if data.TracerLine then
+					data.TracerLine.Visible = false
+				end
+			end
+		end
+	end)
+	addToggleCommand({ "gradient", "grad", "panelgradient" }, "gradient [on/off]", "Toggle panel gradient.", function()
+		return Theme.GradientEnabled
+	end, function(value)
+		Theme.GradientEnabled = value
+		updateStyle()
+	end)
+	addToggleCommand({ "fullbright", "fb", "bright" }, "fullbright [on/off]", "Toggle fullbright.", function()
+		return fullbrightEnabled
+	end, function(value)
+		fullbrightEnabled = value
+		applyFullbright()
+	end)
+	addToggleCommand({ "radar", "minimap", "map" }, "radar [on/off]", "Toggle radar.", function()
+		return radarVisible
+	end, function(value)
+		radarVisible = value
+		updateTopRightLayout()
+		if not value then
+			for _, blip in pairs(radarBlips) do
+				blip.Visible = false
+			end
+		end
+	end)
+	addToggleCommand({ "fpshud", "fpscounter", "fps" }, "fpshud [on/off]", "Toggle FPS HUD.", function()
+		return fpsEnabled
+	end, function(value)
+		fpsEnabled = value
+		updateTopRightLayout()
+	end)
+	addToggleCommand({ "pinghud", "pingcounter", "ping" }, "pinghud [on/off]", "Toggle ping HUD.", function()
+		return pingEnabled
+	end, function(value)
+		pingEnabled = value
+		updateTopRightLayout()
+	end)
+	addToggleCommand({ "speedhud", "speedcounter", "speedometer" }, "speedhud [on/off]", "Toggle speed HUD.", function()
+		return speedHudEnabled
+	end, function(value)
+		speedHudEnabled = value
+		updateTopRightLayout()
+	end)
+	addToggleCommand({ "targethud", "targetcounter", "enemyscan" }, "targethud [on/off]", "Toggle target counter HUD.", function()
+		return targetCounterEnabled
+	end, function(value)
+		targetCounterEnabled = value
+		updateTopRightLayout()
+	end)
+	addToggleCommand({ "lockhud", "lockcounter", "lockstatus" }, "lockhud [on/off]", "Toggle lock HUD.", function()
+		return Settings.TargetLockHUD
+	end, function(value)
+		Settings.TargetLockHUD = value
+		updateTopRightLayout()
+	end)
+	addToggleCommand({ "lowend", "performance", "potato" }, "lowend [on/off]", "Toggle low-end mode.", function()
+		return Settings.LowEndMode
+	end, function(value)
+		Settings.LowEndMode = value
+		applyPerformanceMode()
+	end)
+	addToggleCommand({ "friendnotify", "friends", "friendalerts" }, "friendnotify [on/off]", "Toggle friend notifier.", function()
+		return friendNotifierEnabled
+	end, function(value)
+		friendNotifierEnabled = value
+	end)
+	addToggleCommand({ "spin", "spinbot", "whirl" }, "spin [on/off]", "Toggle spinning.", function()
+		return spinEnabled
+	end, function(value)
+		spinEnabled = value
+	end)
+	addToggleCommand({ "clone", "followerclone", "afterclone" }, "clone [on/off]", "Toggle follower clone.", function()
+		return followerCloneEnabled
+	end, function(value)
+		followerCloneEnabled = value
+		if not value then
+			destroyFollowerClone()
+		end
+	end)
+	addToggleCommand({ "animegirl", "waifu", "julia" }, "animegirl [on/off]", "Toggle anime girl.", function()
+		return animeGirlVisible
+	end, function(value)
+		setAnimeGirlVisible(value)
+	end)
+	addToggleCommand({ "rainbowaccent", "rainbow", "rgb" }, "rainbowaccent [on/off]", "Toggle rainbow accent.", function()
+		return rainbowAccentEnabled
+	end, function(value)
+		rainbowAccentEnabled = value
+		if value then
+			savedRainbowTheme = {
+				CurrentAccent = Theme.CurrentAccent,
+				GradientA = Theme.GradientA,
+				GradientB = Theme.GradientB,
+			}
+		elseif savedRainbowTheme then
+			Theme.CurrentAccent = savedRainbowTheme.CurrentAccent
+			Theme.GradientA = savedRainbowTheme.GradientA
+			Theme.GradientB = savedRainbowTheme.GradientB
+			savedRainbowTheme = nil
+			updateStyle()
+		end
+	end)
+	addToggleCommand({ "hudclock", "clock", "timehud" }, "hudclock [on/off]", "Toggle HUD clock.", function()
+		return hudClockEnabled
+	end, function(value)
+		hudClockEnabled = value
+		watermark.Text = hudClockEnabled and ("Julia Hub | " .. os.date("%H:%M:%S")) or "Julia Hub"
+		updateTopRightLayout()
+	end)
+	addToggleCommand({ "fovpulse", "pulsefov", "breathingfov" }, "fovpulse [on/off]", "Toggle FOV pulse.", function()
+		return fovPulseEnabled
+	end, function(value)
+		fovPulseEnabled = value
+	end)
+	addToggleCommand({ "spinpulse", "pulsespin", "spinwave" }, "spinpulse [on/off]", "Toggle spin pulse.", function()
+		return spinPulseEnabled
+	end, function(value)
+		spinPulseEnabled = value
+	end)
+	addToggleCommand({ "targetlock", "locksystem", "stickylock" }, "targetlock [on/off]", "Toggle target lock system.", function()
+		return Settings.TargetLockEnabled
+	end, function(value)
+		Settings.TargetLockEnabled = value
+		if not value then
+			clearLockedTarget(true)
+		end
+	end)
+	addToggleCommand({ "locksticky", "sticklock", "persistlock" }, "locksticky [on/off]", "Toggle sticky target lock.", function()
+		return Settings.TargetLockSticky
+	end, function(value)
+		Settings.TargetLockSticky = value
+	end)
+	addToggleCommand({ "locknotify", "targetnotify", "lockalerts" }, "locknotify [on/off]", "Toggle target lock notifications.", function()
+		return targetLockNotifyEnabled
+	end, function(value)
+		targetLockNotifyEnabled = value
+	end)
+	addToggleCommand({ "panelads", "hidepanelads", "adsmenu" }, "panelads [on/off]", "Hide panel while ADS.", function()
+		return panelAutoHideOnAim
+	end, function(value)
+		panelAutoHideOnAim = value
+	end)
+	addToggleCommand({ "infjump", "infinitejump", "superjump" }, "infjump [on/off]", "Toggle infinite jump.", function()
+		return infiniteJumpEnabled
+	end, function(value)
+		infiniteJumpEnabled = value
+	end)
+	addToggleCommand({ "bunnyhop", "bhop", "autohop" }, "bunnyhop [on/off]", "Toggle bunny hop.", function()
+		return bunnyHopEnabled
+	end, function(value)
+		bunnyHopEnabled = value
+	end)
+	addToggleCommand({ "antiafk", "antikick", "idleprotect" }, "antiafk [on/off]", "Toggle anti-AFK.", function()
+		return antiAFKEnabled
+	end, function(value)
+		antiAFKEnabled = value
+	end)
+	addToggleCommand({ "zoomunlock", "unlockzoom", "freezoom" }, "zoomunlock [on/off]", "Toggle zoom unlock.", function()
+		return zoomUnlockEnabled
+	end, function(value)
+		zoomUnlockEnabled = value
+		applyZoomUnlockState()
+	end)
+	addToggleCommand({ "blur", "blurfx", "frost" }, "blur [on/off]", "Toggle blur effect.", function()
+		return blurFXEnabled
+	end, function(value)
+		blurFXEnabled = value
+		blurEffect.Enabled = value
+	end)
+	addToggleCommand({ "bloom", "bloomfx", "glow" }, "bloom [on/off]", "Toggle bloom effect.", function()
+		return bloomFXEnabled
+	end, function(value)
+		bloomFXEnabled = value
+		bloomEffect.Enabled = value
+	end)
+	addToggleCommand({ "nightvision", "nv", "greenvision" }, "nightvision [on/off]", "Toggle night vision.", function()
+		return nightVisionEnabled
+	end, function(value)
+		nightVisionEnabled = value
+		nightVisionEffect.Enabled = value
+	end)
+	addToggleCommand({ "monochrome", "mono", "bw" }, "monochrome [on/off]", "Toggle monochrome.", function()
+		return monochromeEnabled
+	end, function(value)
+		monochromeEnabled = value
+		monochromeEffect.Enabled = value
+	end)
+	addToggleCommand({ "saturation", "sat", "saturationplus" }, "saturation [on/off]", "Toggle saturation boost.", function()
+		return saturationBoostEnabled
+	end, function(value)
+		saturationBoostEnabled = value
+		saturationEffect.Enabled = value
+	end)
+	addToggleCommand({ "cinematicbars", "bars", "moviebars" }, "cinematicbars [on/off]", "Toggle cinematic bars.", function()
+		return cinematicBarsEnabled
+	end, function(value)
+		cinematicBarsEnabled = value
+		cinematicTop.Visible = value
+		cinematicBottom.Visible = value
+	end)
+	addToggleCommand({ "mousehalo", "halo", "cursorring" }, "mousehalo [on/off]", "Toggle mouse halo.", function()
+		return mouseHaloEnabled
+	end, function(value)
+		mouseHaloEnabled = value
+		mouseHalo.Visible = value
+	end)
+	addToggleCommand({ "crosshairspin", "reticlespin", "xspin" }, "crosshairspin [on/off]", "Toggle crosshair spin.", function()
+		return crosshairSpinEnabled
+	end, function(value)
+		crosshairSpinEnabled = value
+		if not value then
+			crosshairHolder.Rotation = 0
+		end
+	end)
+	addToggleCommand({ "watermarkpulse", "pulsemark", "logopulse" }, "watermarkpulse [on/off]", "Toggle watermark pulse.", function()
+		return watermarkPulseEnabled
+	end, function(value)
+		watermarkPulseEnabled = value
+		if not value then
+			updateTopRightLayout()
+		end
+	end)
+	addToggleCommand({ "radarspin", "mapspin", "rotateradar" }, "radarspin [on/off]", "Toggle radar spin.", function()
+		return radarSpinEnabled
+	end, function(value)
+		radarSpinEnabled = value
+		if not value then
+			radarFrame.Rotation = 0
+		end
+	end)
+	addToggleCommand({ "toolhud", "toolname", "weaponhud" }, "toolhud [on/off]", "Toggle tool HUD.", function()
+		return toolHudEnabled
+	end, function(value)
+		toolHudEnabled = value
+		updateTopRightLayout()
+	end)
+	addToggleCommand({ "directionhud", "compass", "dirhud" }, "directionhud [on/off]", "Toggle direction HUD.", function()
+		return directionHudEnabled
+	end, function(value)
+		directionHudEnabled = value
+		updateTopRightLayout()
+	end)
+	addToggleCommand({ "autoequip", "equipauto", "autotool" }, "autoequip [on/off]", "Toggle auto-equip.", function()
+		return autoEquipToolEnabled
+	end, function(value)
+		autoEquipToolEnabled = value
+	end)
+
+	addNumberCommand({ "espdistance", "esprange", "highlightdistance" }, "espdistance <500-10000>", "Set highlight ESP distance.", function()
+		return Settings.MaxESPDistance
+	end, function(value)
+		Settings.MaxESPDistance = value
+	end, 500, 10000, 500, formatRangeValue)
+	addNumberCommand({ "boxrange", "boxdistance", "2dboxrange" }, "boxrange <500-10000>", "Set 2D box ESP range.", function()
+		return Settings.BoxESPDistance
+	end, function(value)
+		Settings.BoxESPDistance = value
+	end, 500, 10000, 250, formatRangeValue)
+	addNumberCommand({ "aimdistance", "aimrange", "lockdistance" }, "aimdistance <500-10000>", "Set aim distance.", function()
+		return Settings.MaxAimlockDistance
+	end, function(value)
+		Settings.MaxAimlockDistance = value
+	end, 500, 10000, 500, formatRangeValue)
+	addNumberCommand({ "fovradius", "fovsize", "aimfov" }, "fovradius <40-700>", "Set FOV radius.", function()
+		return Settings.FOVRadius
+	end, function(value)
+		Settings.FOVRadius = value
+	end, 40, 700, 10, formatRangeValue)
+	addNumberCommand({ "softsmooth", "softsmoothing", "smoothness" }, "softsmooth <0.02-1.00>", "Set softlock smoothness.", function()
+		return Settings.SoftLockSmoothing
+	end, function(value)
+		Settings.SoftLockSmoothing = value
+	end, 0.02, 1, 0.01, formatSmoothingValue)
+	addNumberCommand({ "bonethickness", "bonesize", "skeletonthick" }, "bonethickness <1-4>", "Set bone thickness.", function()
+		return Settings.BoneThickness
+	end, function(value)
+		Settings.BoneThickness = value
+	end, 1, 4, 1, formatRangeValue)
+	addNumberCommand({ "tracerthickness", "tracerthick", "linethick" }, "tracerthickness <1-3>", "Set tracer thickness.", function()
+		return Settings.TracerThickness
+	end, function(value)
+		Settings.TracerThickness = value
+	end, 1, 3, 1, formatRangeValue)
+	addNumberCommand({ "radarrange", "radardistance", "maprange" }, "radarrange <100-5000>", "Set radar range.", function()
+		return radarConfig.Range
+	end, function(value)
+		radarConfig.Range = value
+	end, 100, 5000, 50, formatRangeValue)
+	addNumberCommand({ "radarsize", "mapsize", "radarscale" }, "radarsize <180-300>", "Set radar size.", function()
+		return radarConfig.Size
+	end, function(value)
+		radarConfig.Size = value
+		radarFrame.Size = UDim2.fromOffset(radarConfig.Size, radarConfig.Size)
+		radarRadius = radarConfig.Size * 0.5 - 16
+		updateTopRightLayout()
+		updateRadar()
+	end, 180, 300, 20, formatRangeValue)
+	addNumberCommand({ "spinspeed", "spinrate", "rpm" }, "spinspeed <360-50000>", "Set spin speed.", function()
+		return spinSpeed
+	end, function(value)
+		spinSpeed = value
+	end, 360, 50000, 10, formatRangeValue)
+	addNumberCommand({ "clonegap", "followgap", "cloneoffset" }, "clonegap <4-16>", "Set follower clone gap.", function()
+		return followerCloneGap
+	end, function(value)
+		followerCloneGap = value
+	end, 4, 16, 1, formatRangeValue)
+	addNumberCommand({ "walkspeed", "ws", "speed" }, "walkspeed <16-200>", "Set walkspeed override.", function()
+		return walkSpeedOverride or defaultWalkSpeed
+	end, function(value)
+		walkSpeedOverride = value
+		applyWalkSpeedSetting()
+	end, 16, 200, 1, formatRangeValue)
+	addNumberCommand({ "jumppower", "jp", "jump" }, "jumppower <50-200>", "Set jump power override.", function()
+		return jumpPowerOverride or defaultJumpPower
+	end, function(value)
+		jumpPowerOverride = value
+		applyJumpPowerSetting()
+	end, 50, 200, 1, formatRangeValue)
+	addNumberCommand({ "camfov", "camerafov", "viewfov" }, "camfov <60-120>", "Set camera FOV override.", function()
+		return cameraFOVOverride or defaultCameraFOV
+	end, function(value)
+		cameraFOVOverride = value
+		applyCameraFOVSetting()
+	end, 60, 120, 1, formatRangeValue)
+	addNumberCommand({ "panelalpha", "paneltransparency", "panelopacity" }, "panelalpha <0.08-0.50>", "Set panel transparency.", function()
+		return Theme.PanelTransparency
+	end, function(value)
+		Theme.PanelTransparency = value
+		updateStyle()
+	end, 0.08, 0.5, 0.01, formatSmoothingValue)
+	addNumberCommand({ "buttonalpha", "buttontransparency", "buttonopacity" }, "buttonalpha <0.00-0.45>", "Set button transparency.", function()
+		return Theme.ButtonTransparency
+	end, function(value)
+		Theme.ButtonTransparency = value
+		updateStyle()
+	end, 0, 0.45, 0.01, formatSmoothingValue)
+	addNumberCommand({ "watermarkalpha", "markalpha", "logoalpha" }, "watermarkalpha <0.20-0.65>", "Set watermark transparency.", function()
+		return Theme.WatermarkTransparency
+	end, function(value)
+		Theme.WatermarkTransparency = value
+		updateStyle()
+	end, 0.2, 0.65, 0.01, formatSmoothingValue)
+	]]
+
+	table.clear(Cmd.Registry)
+	table.clear(Cmd.Entries)
+	Cmd.AliasCount = 0
+
+	local function getUtilityRoot()
+		return getLocalRoot()
+	end
+
+	local function getUtilityHumanoid()
+		return getHumanoid(LocalPlayer.Character)
+	end
+
+	local function setNoclipEnabled(enabled)
+		CmdUtility.Noclip = enabled
+		if not enabled then
+			for part, originalValue in pairs(CmdUtility.OriginalCollision) do
+				if part and part.Parent then
+					part.CanCollide = originalValue
+				end
+			end
+			table.clear(CmdUtility.OriginalCollision)
+		end
+	end
+
+	local function setFloatEnabled(enabled)
+		CmdUtility.Float = enabled
+		if not enabled then
+			if CmdUtility.FloatPart then
+				CmdUtility.FloatPart:Destroy()
+				CmdUtility.FloatPart = nil
+			end
+			return
+		end
+		if not CmdUtility.FloatPart or not CmdUtility.FloatPart.Parent then
+			CmdUtility.FloatPart = create("Part", {
+				Name = "JuliaCommandFloatPad",
+				Anchored = true,
+				CanCollide = true,
+				CanTouch = false,
+				CanQuery = false,
+				Size = Vector3.new(7, 0.35, 7),
+				Transparency = 0.25,
+				Color = Theme.CurrentAccent,
+				Material = Enum.Material.Neon,
+				Parent = Workspace,
+			})
+		end
+	end
+
+	local function setFreezeEnabled(enabled)
+		local root = getUtilityRoot()
+		if not root then
+			return false
+		end
+		CmdUtility.Frozen = enabled
+		root.Anchored = enabled
+		return true
+	end
+
+	local function listTools()
+		local names = {}
+		local character = LocalPlayer.Character
+		local backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+		if character then
+			for _, item in ipairs(character:GetChildren()) do
+				if item:IsA("Tool") then
+					table.insert(names, item.Name)
+				end
+			end
+		end
+		if backpack then
+			for _, item in ipairs(backpack:GetChildren()) do
+				if item:IsA("Tool") then
+					table.insert(names, item.Name)
+				end
+			end
+		end
+		table.sort(names)
+		return #names > 0 and table.concat(names, ", ") or "no tools found"
+	end
+
+	local function findTool(query)
+		local wanted = normalizeCommandToken(query)
+		if wanted == "" then
+			return nil
+		end
+		local containers = { LocalPlayer.Character, LocalPlayer:FindFirstChildOfClass("Backpack") }
+		for _, container in ipairs(containers) do
+			if container then
+				for _, item in ipairs(container:GetChildren()) do
+					if item:IsA("Tool") and normalizeCommandToken(item.Name):find(wanted, 1, true) then
+						return item
+					end
+				end
+			end
+		end
+		return nil
+	end
+
+	registerCommand({ "help", "?", "cmdhelp" }, "help [command]", "Show utility console help.", function(args)
+		local topic = normalizeCommandToken(args[2])
+		if topic ~= "" then
+			local entry = Cmd.Registry[topic]
+			if not entry then
+				return false, "unknown command"
+			end
+			return true, entry.Usage .. " - " .. entry.Description
+		end
+		appendConsoleLine("Core: help commands clear history echo")
+		appendConsoleLine("Movement: noclip clip float unfloat freeze unfreeze nosit")
+		appendConsoleLine("Position: savepos loadpos coords faceup")
+		appendConsoleLine("Tools: tools equip unequip")
+		appendConsoleLine("Info: serverinfo charinfo keytime")
+		return true, tostring(#Cmd.Entries) .. " utility commands ready."
+	end)
+
+	registerCommand({ "commands", "cmds", "list" }, "commands", "List command names.", function()
+		local primary = {}
+		for _, entry in ipairs(Cmd.Entries) do
+			table.insert(primary, entry.Names[1])
+		end
+		table.sort(primary)
+		appendConsoleLine(table.concat(primary, ", "))
+		return true, tostring(#primary) .. " commands."
+	end)
+
+	registerCommand({ "clear", "cls" }, "clear", "Clear console output.", function()
+		table.clear(Cmd.OutputLines)
+		Cmd.OutputLabel.Text = ""
+		return true, "cleared."
+	end)
+
+	registerCommand({ "history", "recent" }, "history", "Show recent commands.", function()
+		if #Cmd.History == 0 then
+			return true, "no history yet."
+		end
+		for index = math.max(1, #Cmd.History - 5), #Cmd.History do
+			appendConsoleLine(Cmd.History[index])
+		end
+		return true, "recent commands shown."
+	end)
+
+	registerCommand({ "echo", "print" }, "echo <text>", "Print text in the console.", function(args)
+		local message = table.concat(args, " ", 2)
+		return message ~= "" and true or false, message ~= "" and message or "text required"
+	end)
+
+	registerCommand({ "noclip", "nc" }, "noclip [on/off]", "Walk through local collision.", function(args)
+		local nextValue = parseToggleValue(args[2], CmdUtility.Noclip)
+		if nextValue == nil then
+			return false, "use on/off"
+		end
+		setNoclipEnabled(nextValue)
+		return true, "noclip: " .. (nextValue and "ON" or "OFF")
+	end)
+
+	registerCommand({ "clip", "unnoclip" }, "clip", "Turn noclip off.", function()
+		setNoclipEnabled(false)
+		return true, "noclip: OFF"
+	end)
+
+	registerCommand({ "float", "platform" }, "float [on/off]", "Toggle a small local platform under you.", function(args)
+		local nextValue = parseToggleValue(args[2], CmdUtility.Float)
+		if nextValue == nil then
+			return false, "use on/off"
+		end
+		setFloatEnabled(nextValue)
+		return true, "float: " .. (nextValue and "ON" or "OFF")
+	end)
+
+	registerCommand({ "unfloat", "nofloat" }, "unfloat", "Remove the float platform.", function()
+		setFloatEnabled(false)
+		return true, "float: OFF"
+	end)
+
+	registerCommand({ "freeze", "anchor" }, "freeze", "Anchor your root part.", function()
+		local ok = setFreezeEnabled(true)
+		return ok, ok and "frozen." or "character not ready"
+	end)
+
+	registerCommand({ "unfreeze", "unanchor" }, "unfreeze", "Unanchor your root part.", function()
+		local ok = setFreezeEnabled(false)
+		return ok, ok and "unfrozen." or "character not ready"
+	end)
+
+	registerCommand({ "nosit", "antisit" }, "nosit [on/off]", "Prevent your humanoid from sitting.", function(args)
+		local nextValue = parseToggleValue(args[2], CmdUtility.NoSit)
+		if nextValue == nil then
+			return false, "use on/off"
+		end
+		CmdUtility.NoSit = nextValue
+		return true, "nosit: " .. (nextValue and "ON" or "OFF")
+	end)
+
+	registerCommand({ "savepos", "markpos" }, "savepos", "Save your current position.", function()
+		local root = getUtilityRoot()
+		if not root then
+			return false, "character not ready"
+		end
+		CmdUtility.SavedCFrame = root.CFrame
+		return true, "position saved."
+	end)
+
+	registerCommand({ "loadpos", "backpos", "returnpos" }, "loadpos", "Return to saved position.", function()
+		local root = getUtilityRoot()
+		if not root or not CmdUtility.SavedCFrame then
+			return false, "no saved position"
+		end
+		root.CFrame = CmdUtility.SavedCFrame
+		return true, "returned to saved position."
+	end)
+
+	registerCommand({ "coords", "pos", "whereami" }, "coords", "Show your current coordinates.", function()
+		local root = getUtilityRoot()
+		if not root then
+			return false, "character not ready"
+		end
+		local p = root.Position
+		return true, string.format("X %.1f | Y %.1f | Z %.1f", p.X, p.Y, p.Z)
+	end)
+
+	registerCommand({ "faceup", "upright" }, "faceup", "Set your root upright.", function()
+		local root = getUtilityRoot()
+		if not root then
+			return false, "character not ready"
+		end
+		root.CFrame = CFrame.new(root.Position)
+		return true, "upright."
+	end)
+
+	registerCommand({ "sit" }, "sit", "Sit your humanoid.", function()
+		local humanoid = getUtilityHumanoid()
+		if not humanoid then
+			return false, "character not ready"
+		end
+		humanoid.Sit = true
+		return true, "sitting."
+	end)
+
+	registerCommand({ "unsit", "stand" }, "unsit", "Stand up.", function()
+		local humanoid = getUtilityHumanoid()
+		if not humanoid then
+			return false, "character not ready"
+		end
+		humanoid.Sit = false
+		humanoid:ChangeState(Enum.HumanoidStateType.Running)
+		return true, "standing."
+	end)
+
+	registerCommand({ "tools", "toolbox" }, "tools", "List local tools.", function()
+		return true, listTools()
+	end)
+
+	registerCommand({ "equip", "equiptool" }, "equip <tool>", "Equip a tool by partial name.", function(args)
+		local tool = findTool(table.concat(args, " ", 2))
+		local humanoid = getUtilityHumanoid()
+		if not tool or not humanoid then
+			return false, "tool or character not found"
+		end
+		humanoid:EquipTool(tool)
+		return true, "equipped: " .. tool.Name
+	end)
+
+	registerCommand({ "unequip", "sheathe" }, "unequip", "Unequip current tools.", function()
+		local humanoid = getUtilityHumanoid()
+		if not humanoid then
+			return false, "character not ready"
+		end
+		humanoid:UnequipTools()
+		return true, "tools unequipped."
+	end)
+
+	registerCommand({ "serverinfo", "jobinfo" }, "serverinfo", "Show place and server info.", function()
+		return true, "place " .. tostring(game.PlaceId) .. " | players " .. tostring(#Players:GetPlayers()) .. " | job " .. tostring(game.JobId)
+	end)
+
+	registerCommand({ "charinfo", "riginfo" }, "charinfo", "Show character health and rig.", function()
+		local humanoid = getUtilityHumanoid()
+		if not humanoid then
+			return false, "character not ready"
+		end
+		return true, "health " .. math.floor(humanoid.Health) .. "/" .. math.floor(humanoid.MaxHealth) .. " | rig " .. humanoid.RigType.Name
+	end)
+
+	registerCommand({ "keytime", "ktl" }, "keytime", "Show key time left.", function()
+		return true, getKeyTimeText()
+	end)
+
+	local function executeCommand(text)
+		local cleaned = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+		if cleaned == "" then
+			return
+		end
+		if cleaned:sub(1, 1) == ";" or cleaned:sub(1, 1) == ":" or cleaned:sub(1, 1) == "." then
+			cleaned = cleaned:sub(2)
+		end
+		local args = splitCommandWords(cleaned)
+		local commandName = normalizeCommandToken(args[1])
+		if commandName == "" then
+			return
+		end
+		table.insert(Cmd.History, cleaned)
+		appendConsoleLine("> " .. cleaned)
+		local entry = Cmd.Registry[commandName]
+		if not entry then
+			appendConsoleLine("unknown command. type help.")
+			return
+		end
+		local ok, success, message = pcall(entry.Handler, args)
+		if not ok then
+			appendConsoleLine("error: " .. tostring(success))
+			return
+		end
+		if success then
+			appendConsoleLine(tostring(message or "ok"))
+		else
+			appendConsoleLine("fail: " .. tostring(message or "command rejected"))
+		end
+	end
+
+	local function submitCommandInput()
+		local text = Cmd.InputBox and Cmd.InputBox.Text or ""
+		if tostring(text):gsub("%s+", "") == "" then
+			return
+		end
+		Cmd.InputBox.Text = ""
+		executeCommand(text)
+		task.defer(function()
+			if Cmd.Visible and Cmd.InputBox and Cmd.InputBox.Parent then
+				Cmd.InputBox:CaptureFocus()
+			end
+		end)
+	end
+
+	connect(Cmd.Launcher.MouseButton1Click, function()
+		setConsoleVisible(not Cmd.Visible)
+	end)
+	connect(Cmd.CloseButton.MouseButton1Click, function()
+		setConsoleVisible(false)
+	end)
+	connect(commandDragHandle.InputBegan, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			Cmd.Dragging = true
+			Cmd.DragStart = input.Position
+			Cmd.StartPosition = Cmd.Frame.Position
+			Cmd.DragInput = input
+		end
+	end)
+	connect(commandDragHandle.InputChanged, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			Cmd.DragInput = input
+		end
+	end)
+	connect(UserInputService.InputChanged, function(input)
+		if not Cmd.Dragging or input ~= Cmd.DragInput or not Cmd.DragStart or not Cmd.StartPosition then
+			return
+		end
+		local delta = input.Position - Cmd.DragStart
+		Cmd.Frame.Position = UDim2.new(
+			Cmd.StartPosition.X.Scale,
+			math.floor(Cmd.StartPosition.X.Offset + delta.X),
+			Cmd.StartPosition.Y.Scale,
+			math.floor(Cmd.StartPosition.Y.Offset + delta.Y)
+		)
+	end)
+	connect(Cmd.InputBox.FocusLost, function(enterPressed)
+		if enterPressed then
+			submitCommandInput()
+		end
+	end)
+	connect(UserInputService.InputBegan, function(input)
+		if not Cmd.Visible or not Cmd.InputBox or not Cmd.InputBox:IsFocused() then
+			return
+		end
+		if input.KeyCode == Enum.KeyCode.Return or input.KeyCode == Enum.KeyCode.KeypadEnter then
+			submitCommandInput()
+		end
+	end)
+
+	appendConsoleLine("Julia command console ready.")
+	appendConsoleLine("Type ;help for categories.")
+	Cmd.HintLabel.Text = tostring(#Cmd.Entries) .. " commands / " .. tostring(Cmd.AliasCount) .. " aliases"
+	updateStyle()
+	end
+
+	initCommandConsole()
+
 	updateLockStatusLabel()
 	updateTopRightLayout()
 
@@ -4701,6 +6004,8 @@ local function createMainGui()
 
 	connect(LocalPlayer.CharacterAdded, function()
 		task.wait(0.5)
+		CmdUtility.Frozen = false
+		table.clear(CmdUtility.OriginalCollision)
 		captureMovementDefaults()
 		if zoomUnlockEnabled then
 			LocalPlayer.CameraMinZoomDistance = 0.5
@@ -4822,6 +6127,48 @@ local function createMainGui()
 		local localHumanoid = getHumanoid(LocalPlayer.Character)
 		local mousePosition = UserInputService:GetMouseLocation()
 
+		if CmdUtility.Noclip and now - (CmdUtility.LastNoclipUpdate or 0) >= 0.08 then
+			CmdUtility.LastNoclipUpdate = now
+			local character = LocalPlayer.Character
+			if character then
+				for _, descendant in ipairs(character:GetDescendants()) do
+					if descendant:IsA("BasePart") then
+						if CmdUtility.OriginalCollision[descendant] == nil then
+							CmdUtility.OriginalCollision[descendant] = descendant.CanCollide
+						end
+						descendant.CanCollide = false
+					end
+				end
+			end
+		end
+		if CmdUtility.NoSit and localHumanoid and localHumanoid.Sit then
+			localHumanoid.Sit = false
+			localHumanoid:ChangeState(Enum.HumanoidStateType.Running)
+		end
+		if CmdUtility.Float then
+			local root = getLocalRoot()
+			if root then
+				if not CmdUtility.FloatPart or not CmdUtility.FloatPart.Parent then
+					CmdUtility.FloatPart = create("Part", {
+						Name = "JuliaCommandFloatPad",
+						Anchored = true,
+						CanCollide = true,
+						CanTouch = false,
+						CanQuery = false,
+						Size = Vector3.new(7, 0.35, 7),
+						Transparency = 0.25,
+						Color = Theme.CurrentAccent,
+						Material = Enum.Material.Neon,
+						Parent = Workspace,
+					})
+				end
+				if CmdUtility.FloatPart then
+					CmdUtility.FloatPart.Color = Theme.CurrentAccent
+					CmdUtility.FloatPart.CFrame = CFrame.new(root.Position - Vector3.new(0, 3.35, 0))
+				end
+			end
+		end
+
 		if currentCamera and cameraFOVOverride and math.abs(currentCamera.FieldOfView - cameraFOVOverride) > 0.05 then
 			currentCamera.FieldOfView = cameraFOVOverride
 		end
@@ -4933,6 +6280,24 @@ local function createMainGui()
 
 	screenGui.Destroying:Connect(function()
 		destroyFollowerClone()
+		if CmdUtility.Frozen then
+			local root = getLocalRoot()
+			if root then
+				root.Anchored = false
+			end
+			CmdUtility.Frozen = false
+		end
+		CmdUtility.Noclip = false
+		for part, originalValue in pairs(CmdUtility.OriginalCollision) do
+			if part and part.Parent then
+				part.CanCollide = originalValue
+			end
+		end
+		table.clear(CmdUtility.OriginalCollision)
+		if CmdUtility.FloatPart then
+			CmdUtility.FloatPart:Destroy()
+			CmdUtility.FloatPart = nil
+		end
 		LocalPlayer.CameraMinZoomDistance = defaultMinZoom
 		LocalPlayer.CameraMaxZoomDistance = defaultMaxZoom
 		local camera = Workspace.CurrentCamera
