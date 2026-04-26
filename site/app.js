@@ -2,7 +2,7 @@ const PORTAL_CONFIG = {
   // Replace with SHA-256 of your portal passphrase.
   // Example generator:
   // powershell -NoProfile -Command "$s='your-pass'; $sha=[Security.Cryptography.SHA256]::Create(); ([BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($s)))).Replace('-','').ToLower()"
-  passphraseSha256: "replace-with-sha256",
+  passphraseSha256: "01492d0a83facb9e8a0d4864a7b3f8f9de004edac9e5075846164da5777d0805",
 };
 
 const gate = document.querySelector("#gate");
