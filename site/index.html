@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Julia Hub Portal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="shell">
+    <section id="gate" class="gate card">
+      <p class="eyebrow">Protected Info Portal</p>
+      <h1>Julia Hub</h1>
+      <p class="muted">Enter the portal passphrase to view setup notes, key help, and HWID support steps.</p>
+      <form id="login-form">
+        <label for="portal-pass">Portal passphrase</label>
+        <input id="portal-pass" name="portal-pass" type="password" autocomplete="current-password" placeholder="Enter passphrase">
+        <button type="submit">Unlock Portal</button>
+      </form>
+      <p id="login-status" class="status"></p>
+      <p class="tiny">For real protection, host this behind Cloudflare Access, Netlify password protection, or another server-side gate.</p>
+    </section>
+
+    <section id="portal" class="portal hidden">
+      <header class="hero">
+        <p class="eyebrow">Julia Hub Operator Notes</p>
+        <h1>Support, Keys, And Device Locks</h1>
+        <p>This page is for support information and safe license administration. Keep private keys, plaintext exports, and admin credentials off public pages.</p>
+      </header>
+
+      <section class="grid">
+        <article class="card">
+          <h2>User Commands</h2>
+          <p><code>;hwid</code> shows the user's HWID hash for support.</p>
+          <p><code>;deviceinfo</code> shows platform, locale region, resolution, and HWID source.</p>
+          <p><code>;reloadkeys</code> refreshes the public key manifest.</p>
+          <p><code>;reloadhwid</code> refreshes the HWID lock manifest.</p>
+        </article>
+
+        <article class="card">
+          <h2>Admin HWID Lock</h2>
+          <p>Ask the user for their <code>;hwid</code> hash, then run:</p>
+          <pre><code>powershell -ExecutionPolicy Bypass -File .\julia_hwid_admin.ps1 -Action Lock -Key "KEY-HERE" -HwidHash "HWID-HASH" -CommitPush</code></pre>
+          <p>Reset a lock with:</p>
+          <pre><code>powershell -ExecutionPolicy Bypass -File .\julia_hwid_admin.ps1 -Action Reset -Key "KEY-HERE" -CommitPush</code></pre>
+        </article>
+
+        <article class="card">
+          <h2>Security Posture</h2>
+          <p>The public loader is encrypted to reduce casual copying, but client-delivered code can still be inspected by determined users.</p>
+          <p>The strongest setup is a private backend that verifies key hash, HWID hash, Roblox user ID, and revocation state before returning access.</p>
+        </article>
+
+        <article class="card">
+          <h2>Privacy Note</h2>
+          <p>The in-script device card shows platform and locale-derived region only. It does not perform IP geolocation.</p>
+          <p>Country-level checks should stay server-side in experiences you own and should be disclosed to users.</p>
+        </article>
+      </section>
+
+      <footer>
+        <button id="lock-again" type="button">Lock Portal</button>
+        <span>Keep this portal behind host-level access for real privacy.</span>
+      </footer>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
