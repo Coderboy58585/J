@@ -419,6 +419,237 @@ function Library.MakeRadar(config)
 	}
 end
 
+function Library.MakeModernCategoryShell(config)
+	local theme = config.Theme
+	local panel = config.Panel
+	local connect = config.Connect
+	local tween = config.Tween or function(object, _, props)
+		for property, value in pairs(props or {}) do
+			object[property] = value
+		end
+	end
+	local categories = config.Categories or {}
+	local accentPresets = config.AccentPresets or {}
+	local onCategorySelected = config.OnCategorySelected or function() end
+	local onModeToggle = config.OnModeToggle or function() end
+	local onAccentSelected = config.OnAccentSelected or function() end
+
+	local panelStroke = Library.Create("UIStroke", {
+		Name = "ModernPanelStroke",
+		Color = theme.CurrentAccent,
+		Thickness = 1.4,
+		Transparency = 0.22,
+		Enabled = true,
+		Parent = panel,
+	})
+
+	local railShadow = Library.Create("Frame", {
+		Name = "ModernRailShadow",
+		Size = UDim2.fromOffset(96, 566),
+		Position = UDim2.fromOffset(-102, 78),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.76,
+		BorderSizePixel = 0,
+		Visible = true,
+		ZIndex = 39,
+		Parent = panel,
+	}, { Library.Corner(18) })
+
+	local rail = Library.Create("Frame", {
+		Name = "ModernCategoryRail",
+		Size = UDim2.fromOffset(96, 566),
+		Position = UDim2.fromOffset(-108, 72),
+		BackgroundColor3 = Color3.fromRGB(12, 15, 23),
+		BackgroundTransparency = 0.04,
+		BorderSizePixel = 0,
+		Visible = true,
+		ZIndex = 40,
+		Parent = panel,
+	}, {
+		Library.Corner(18),
+		Library.Stroke(theme.CurrentAccent, 1.2, 0.35),
+		Library.Create("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 30, 44)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(9, 10, 15)),
+			}),
+			Rotation = 90,
+		}),
+	})
+
+	local railTitle = Library.Create("TextLabel", {
+		Name = "RailTitle",
+		Size = UDim2.new(1, -12, 0, 34),
+		Position = UDim2.fromOffset(6, 8),
+		BackgroundTransparency = 1,
+		Text = "JULIA",
+		TextColor3 = theme.Text,
+		TextSize = 15,
+		Font = Enum.Font.GothamBlack,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		ZIndex = 42,
+		Parent = rail,
+	})
+
+	local categoryLabel = Library.Create("TextLabel", {
+		Name = "ModernCategoryLabel",
+		Size = UDim2.fromOffset(118, 24),
+		Position = UDim2.new(1, -132, 0, 12),
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		BackgroundTransparency = 0.88,
+		BorderSizePixel = 0,
+		Text = categories[1] and categories[1].Name or "Combat",
+		TextColor3 = theme.Text,
+		TextSize = 12,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 6,
+		Parent = panel,
+	}, { Library.Corner(10) })
+
+	local modeToggle = Library.Create("TextButton", {
+		Name = "UIModeToggle",
+		Size = UDim2.fromOffset(74, 24),
+		Position = UDim2.new(1, -84, 0, 42),
+		BackgroundColor3 = theme.CurrentAccent,
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+		Text = "Modern",
+		TextColor3 = theme.Text,
+		TextSize = 11,
+		Font = Enum.Font.GothamBold,
+		AutoButtonColor = false,
+		ZIndex = 10,
+		Parent = panel,
+	}, { Library.Corner(10) })
+
+	local categoryButtons = {}
+	for index, category in ipairs(categories) do
+		local button = Library.Create("TextButton", {
+			Name = "ModernCategory_" .. tostring(category.Page or index),
+			Size = UDim2.new(1, -14, 0, 42),
+			Position = UDim2.fromOffset(7, 46 + ((index - 1) * 48)),
+			BackgroundColor3 = Color3.fromRGB(26, 31, 44),
+			BackgroundTransparency = 0.2,
+			BorderSizePixel = 0,
+			Text = category.Name or ("Page " .. tostring(index)),
+			TextColor3 = theme.Text,
+			TextSize = 11,
+			Font = Enum.Font.GothamBold,
+			AutoButtonColor = false,
+			ZIndex = 42,
+			Parent = rail,
+		}, { Library.Corner(13) })
+		categoryButtons[category.Page or index] = button
+		connect(button.MouseEnter, function()
+			tween(button, 0.12, {
+				BackgroundTransparency = 0.08,
+				Size = UDim2.new(1, -10, 0, 44),
+				Position = UDim2.fromOffset(5, 45 + ((index - 1) * 48)),
+			})
+		end)
+		connect(button.MouseLeave, function()
+			local selected = button:GetAttribute("JuliaSelected") == true
+			tween(button, 0.12, {
+				BackgroundColor3 = selected and theme.CurrentAccent or Color3.fromRGB(26, 31, 44),
+				BackgroundTransparency = selected and 0.02 or 0.2,
+				Size = UDim2.new(1, -14, 0, 42),
+				Position = UDim2.fromOffset(7, 46 + ((index - 1) * 48)),
+			})
+		end)
+		connect(button.MouseButton1Click, function()
+			onCategorySelected(category.Page or index)
+		end)
+	end
+
+	local accentButtons = {}
+	for index, preset in ipairs(accentPresets) do
+		local button = Library.Create("TextButton", {
+			Name = "ModernAccent_" .. tostring(index),
+			Size = UDim2.fromOffset(18, 18),
+			Position = UDim2.fromOffset(10 + ((index - 1) * 21), 532),
+			BackgroundColor3 = preset.A,
+			BorderSizePixel = 0,
+			Text = "",
+			AutoButtonColor = false,
+			ZIndex = 43,
+			Parent = rail,
+		}, {
+			Library.Corner(999),
+			Library.Stroke(Color3.fromRGB(255, 255, 255), 1, 0.45),
+		})
+		accentButtons[index] = button
+		connect(button.MouseButton1Click, function()
+			onAccentSelected(preset)
+		end)
+	end
+
+	connect(modeToggle.MouseEnter, function()
+		tween(modeToggle, 0.12, {
+			BackgroundTransparency = 0,
+			Size = UDim2.fromOffset(78, 26),
+			Position = UDim2.new(1, -86, 0, 41),
+		})
+	end)
+	connect(modeToggle.MouseLeave, function()
+		tween(modeToggle, 0.12, {
+			BackgroundTransparency = 0.08,
+			Size = UDim2.fromOffset(74, 24),
+			Position = UDim2.new(1, -84, 0, 42),
+		})
+	end)
+	connect(modeToggle.MouseButton1Click, onModeToggle)
+
+	local api = {}
+	function api.SetActivePage(page, modernEnabled)
+		local selectedName = "Page " .. tostring(page)
+		for _, category in ipairs(categories) do
+			local button = categoryButtons[category.Page]
+			local selected = category.Page == page
+			if selected then
+				selectedName = category.Name
+			end
+			if button then
+				button.BackgroundColor3 = selected and theme.CurrentAccent or Color3.fromRGB(26, 31, 44)
+				button.BackgroundTransparency = selected and 0.02 or 0.2
+				button:SetAttribute("JuliaSelected", selected)
+			end
+		end
+		categoryLabel.Text = selectedName
+		rail.Visible = modernEnabled
+		railShadow.Visible = modernEnabled
+	end
+	function api.SetMode(mode)
+		local modernEnabled = mode == "Modern"
+		rail.Visible = modernEnabled
+		railShadow.Visible = modernEnabled
+		categoryLabel.Visible = modernEnabled
+		modeToggle.Text = modernEnabled and "Modern" or "Classic"
+		panelStroke.Enabled = modernEnabled
+	end
+	function api.RefreshTheme()
+		panelStroke.Color = theme.CurrentAccent
+		modeToggle.BackgroundColor3 = theme.CurrentAccent
+		for _, button in pairs(categoryButtons) do
+			if button.BackgroundTransparency <= 0.03 then
+				button.BackgroundColor3 = theme.CurrentAccent
+			end
+		end
+	end
+
+	return {
+		Rail = rail,
+		RailShadow = railShadow,
+		CategoryLabel = categoryLabel,
+		ModeToggle = modeToggle,
+		PanelStroke = panelStroke,
+		CategoryButtons = categoryButtons,
+		AccentButtons = accentButtons,
+		SetActivePage = api.SetActivePage,
+		SetMode = api.SetMode,
+		RefreshTheme = api.RefreshTheme,
+	}
+end
+
 function Library.MakeButton(config)
 	local theme = config.Theme
 	local panel = config.Panel
