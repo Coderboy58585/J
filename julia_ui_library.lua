@@ -4,7 +4,7 @@
 local Library = {}
 
 Library.Name = "JuliaUILibrary"
-Library.Version = "0.2.0"
+Library.Version = "0.3.0"
 
 function Library.Create(className, props, children)
 	local object = Instance.new(className)
@@ -984,7 +984,7 @@ function Library.MakeStudioShell(config)
 		Size = UDim2.new(1, -20, 0, 22),
 		Position = UDim2.new(0, 10, 1, -30),
 		BackgroundTransparency = 1,
-		Text = "v" .. tostring(config.Version or "0.6.4") .. "   •   SESSION SETTINGS ARE PRESERVED",
+		Text = "v" .. tostring(config.Version or "0.6.5") .. "   •   SESSION SETTINGS ARE PRESERVED",
 		TextColor3 = theme.Muted,
 		TextSize = 8,
 		Font = Enum.Font.GothamMedium,
@@ -1636,6 +1636,781 @@ function Library.MakeSliderSection(config)
 
 	applySliderValue(currentValue)
 	return frame
+end
+
+local SINISTER_GREEN = Color3.fromRGB(62, 255, 104)
+local SINISTER_DARK = Color3.fromRGB(5, 12, 8)
+local SINISTER_PANEL = Color3.fromRGB(8, 18, 12)
+
+local function makeSinisterLabel(parent, text, size, position, textSize, color, zIndex, alignment)
+	return Library.Create("TextLabel", {
+		Size = size,
+		Position = position,
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+		Text = text or "",
+		TextColor3 = color or SINISTER_GREEN,
+		TextSize = textSize or 12,
+		Font = Enum.Font.Code,
+		TextWrapped = true,
+		TextXAlignment = alignment or Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		ZIndex = zIndex or 932,
+		Parent = parent,
+	})
+end
+
+local function makeSinisterButton(parent, text, size, position, zIndex)
+	return Library.Create("TextButton", {
+		Size = size,
+		Position = position,
+		BackgroundColor3 = Color3.fromRGB(12, 35, 20),
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+		Text = text,
+		TextColor3 = SINISTER_GREEN,
+		TextSize = 12,
+		Font = Enum.Font.Code,
+		AutoButtonColor = false,
+		Active = true,
+		Selectable = true,
+		ZIndex = zIndex or 934,
+		Parent = parent,
+	}, {
+		Library.Corner(7),
+		Library.Stroke(SINISTER_GREEN, 1, 0.55),
+	})
+end
+
+local function bindSinisterButton(button, connect, tween, callback)
+	connect(button.MouseEnter, function()
+		tween(button, 0.12, {
+			BackgroundColor3 = Color3.fromRGB(20, 62, 34),
+			BackgroundTransparency = 0,
+		})
+	end)
+	connect(button.MouseLeave, function()
+		tween(button, 0.12, {
+			BackgroundColor3 = Color3.fromRGB(12, 35, 20),
+			BackgroundTransparency = 0.08,
+		})
+	end)
+	connect(button.Activated, callback)
+end
+
+local function makeSinisterInput(parent, labelText, defaultText, placeholder, position, width)
+	local holder = Library.Create("Frame", {
+		Size = UDim2.fromOffset(width, 50),
+		Position = position,
+		BackgroundColor3 = Color3.fromRGB(7, 25, 14),
+		BackgroundTransparency = 0.05,
+		BorderSizePixel = 0,
+		ZIndex = 933,
+		Parent = parent,
+	}, {
+		Library.Corner(7),
+		Library.Stroke(SINISTER_GREEN, 1, 0.72),
+	})
+	makeSinisterLabel(holder, labelText, UDim2.new(1, -12, 0, 16), UDim2.fromOffset(7, 3), 10, Color3.fromRGB(120, 220, 145), 934)
+	return Library.Create("TextBox", {
+		Size = UDim2.new(1, -12, 0, 24),
+		Position = UDim2.fromOffset(6, 21),
+		BackgroundTransparency = 1,
+		Text = tostring(defaultText or ""),
+		PlaceholderText = placeholder or "",
+		PlaceholderColor3 = Color3.fromRGB(74, 124, 88),
+		TextColor3 = Color3.fromRGB(222, 255, 230),
+		TextSize = 13,
+		Font = Enum.Font.Code,
+		ClearTextOnFocus = false,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		Active = true,
+		ZIndex = 935,
+		Parent = holder,
+	})
+end
+
+function Library.MakeSinisterPanel(config)
+	local parent = config.Parent
+	if not parent then
+		return nil
+	end
+
+	local connect = config.Connect or function(signal, callback)
+		return signal:Connect(callback)
+	end
+	local tweenService = config.TweenService or game:GetService("TweenService")
+	local inputService = config.UserInputService or game:GetService("UserInputService")
+	local tween = config.Tween or function(object, duration, properties)
+		return Library.Tween(object, duration, properties, tweenService, {})
+	end
+	local accessCode = tostring(config.AccessCode or "Sinister")
+	local unlocked = config.InitiallyUnlocked == true
+	local matrixVisionEnabled = config.InitialMatrixVision == true
+	local animationToken = 0
+	local activePage = 1
+
+	local gateLayer = Library.Create("Frame", {
+		Name = "SinisterGateLayer",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+		BackgroundTransparency = 0.18,
+		BorderSizePixel = 0,
+		Visible = false,
+		Active = true,
+		ZIndex = 900,
+		Parent = parent,
+	})
+
+	local gate = Library.Create("Frame", {
+		Name = "SinisterGate",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(390, 224),
+		Position = UDim2.fromScale(0.5, 0.5),
+		BackgroundColor3 = SINISTER_DARK,
+		BackgroundTransparency = 0.02,
+		BorderSizePixel = 0,
+		ZIndex = 902,
+		Parent = gateLayer,
+	}, {
+		Library.Corner(10),
+		Library.Stroke(SINISTER_GREEN, 1.5, 0.25),
+		Library.Create("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(4, 10, 7)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(9, 31, 17)),
+			}),
+			Rotation = 28,
+		}),
+	})
+
+	makeSinisterLabel(gate, "CLASSIFIED NODE // AUTHORIZATION REQUIRED", UDim2.new(1, -68, 0, 20), UDim2.fromOffset(18, 14), 10, Color3.fromRGB(116, 214, 140), 904)
+	makeSinisterLabel(gate, "SINISTER", UDim2.new(1, -36, 0, 42), UDim2.fromOffset(18, 38), 27, SINISTER_GREEN, 904)
+	makeSinisterLabel(gate, "Enter the access phrase to initialize the private matrix.", UDim2.new(1, -36, 0, 30), UDim2.fromOffset(18, 78), 11, Color3.fromRGB(153, 205, 165), 904)
+
+	local gateClose = makeSinisterButton(gate, "X", UDim2.fromOffset(34, 28), UDim2.new(1, -48, 0, 14), 905)
+	local codeBox = Library.Create("TextBox", {
+		Name = "SinisterCodeInput",
+		Size = UDim2.new(1, -36, 0, 38),
+		Position = UDim2.fromOffset(18, 116),
+		BackgroundColor3 = Color3.fromRGB(4, 22, 11),
+		BackgroundTransparency = 0.02,
+		BorderSizePixel = 0,
+		Text = "",
+		PlaceholderText = "ACCESS PHRASE",
+		PlaceholderColor3 = Color3.fromRGB(70, 126, 84),
+		TextColor3 = Color3.fromRGB(224, 255, 231),
+		TextSize = 14,
+		Font = Enum.Font.Code,
+		ClearTextOnFocus = false,
+		Active = true,
+		ZIndex = 904,
+		Parent = gate,
+	}, {
+		Library.Corner(7),
+		Library.Stroke(SINISTER_GREEN, 1, 0.48),
+	})
+	local unlockButton = makeSinisterButton(gate, "INITIALIZE", UDim2.new(1, -36, 0, 34), UDim2.fromOffset(18, 164), 905)
+	local gateStatus = makeSinisterLabel(gate, "NODE LOCKED", UDim2.new(1, -36, 0, 16), UDim2.fromOffset(18, 201), 10, Color3.fromRGB(112, 180, 128), 904, Enum.TextXAlignment.Center)
+
+	local loadingOverlay = Library.Create("Frame", {
+		Name = "SinisterMatrixBoot",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(0, 3, 1),
+		BackgroundTransparency = 0.02,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		Visible = false,
+		Active = true,
+		ZIndex = 940,
+		Parent = parent,
+	})
+
+	local matrixColumns = {}
+	for index = 1, 14 do
+		local column = makeSinisterLabel(
+			loadingOverlay,
+			(index % 3 == 0 and "01\n10\n11\n00\n01\n11" or "11\n00\n10\n01\n10\n00"),
+			UDim2.fromOffset(42, 180),
+			UDim2.new((index - 0.5) / 14, -21, 0, -190 - ((index % 4) * 35)),
+			14,
+			index % 4 == 0 and Color3.fromRGB(184, 255, 198) or SINISTER_GREEN,
+			942,
+			Enum.TextXAlignment.Center
+		)
+		column.TextTransparency = 0.18 + ((index % 3) * 0.12)
+		matrixColumns[index] = column
+	end
+
+	local geometry = {}
+	for index = 1, 10 do
+		local size = 24 + ((index % 4) * 12)
+		local shape = Library.Create("Frame", {
+			Name = "MatrixGeometry" .. tostring(index),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(size, size),
+			Position = UDim2.new(-0.12, 0, 0.08 + ((index % 7) * 0.13), 0),
+			BackgroundTransparency = 1,
+			Rotation = (index * 19) % 90,
+			ZIndex = 943,
+			Parent = loadingOverlay,
+		}, {
+			index % 3 == 0 and Library.Corner(999) or Library.Corner(2),
+			Library.Stroke(SINISTER_GREEN, index % 2 == 0 and 2 or 1, 0.25 + ((index % 3) * 0.15)),
+		})
+		geometry[index] = shape
+	end
+
+	local triangle = Library.Create("Frame", {
+		Name = "SinisterTriangle",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(136, 136),
+		Position = UDim2.fromScale(0.5, 0.46),
+		BackgroundTransparency = 1,
+		ZIndex = 950,
+		Parent = loadingOverlay,
+	})
+	local trianglePoints = {
+		Vector2.new(68, 8),
+		Vector2.new(8, 122),
+		Vector2.new(128, 122),
+	}
+	for index = 1, 3 do
+		local fromPoint = trianglePoints[index]
+		local toPoint = trianglePoints[(index % 3) + 1]
+		local difference = toPoint - fromPoint
+		local midpoint = (fromPoint + toPoint) * 0.5
+		Library.Create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(difference.Magnitude, 3),
+			Position = UDim2.fromOffset(midpoint.X, midpoint.Y),
+			Rotation = math.deg(math.atan2(difference.Y, difference.X)),
+			BackgroundColor3 = SINISTER_GREEN,
+			BorderSizePixel = 0,
+			ZIndex = 951,
+			Parent = triangle,
+		}, { Library.Corner(999) })
+	end
+	Library.Create("Frame", {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(12, 12),
+		Position = UDim2.fromScale(0.5, 0.62),
+		BackgroundColor3 = SINISTER_GREEN,
+		BorderSizePixel = 0,
+		ZIndex = 952,
+		Parent = triangle,
+	}, { Library.Corner(999) })
+
+	local bootTitle = makeSinisterLabel(loadingOverlay, "SINISTER MATRIX // HANDSHAKE", UDim2.fromOffset(420, 34), UDim2.new(0.5, -210, 0.68, 0), 17, SINISTER_GREEN, 952, Enum.TextXAlignment.Center)
+	local bootStatus = makeSinisterLabel(loadingOverlay, "DECRYPTING GEOMETRY...", UDim2.fromOffset(420, 22), UDim2.new(0.5, -210, 0.68, 34), 11, Color3.fromRGB(144, 226, 161), 952, Enum.TextXAlignment.Center)
+	local progressBack = Library.Create("Frame", {
+		Size = UDim2.fromOffset(360, 5),
+		Position = UDim2.new(0.5, -180, 0.68, 66),
+		BackgroundColor3 = Color3.fromRGB(17, 52, 27),
+		BorderSizePixel = 0,
+		ZIndex = 952,
+		Parent = loadingOverlay,
+	}, { Library.Corner(999) })
+	local progressFill = Library.Create("Frame", {
+		Size = UDim2.fromScale(0, 1),
+		BackgroundColor3 = SINISTER_GREEN,
+		BorderSizePixel = 0,
+		ZIndex = 953,
+		Parent = progressBack,
+	}, { Library.Corner(999) })
+
+	local panel = Library.Create("Frame", {
+		Name = "SinisterPanel",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(620, 500),
+		Position = UDim2.fromScale(0.5, 0.5),
+		BackgroundColor3 = SINISTER_PANEL,
+		BackgroundTransparency = 0.02,
+		BorderSizePixel = 0,
+		Visible = false,
+		Active = true,
+		ZIndex = 920,
+		Parent = parent,
+	}, {
+		Library.Corner(11),
+		Library.Stroke(SINISTER_GREEN, 1.5, 0.28),
+		Library.Create("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(5, 13, 8)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 28, 16)),
+			}),
+			Rotation = 35,
+		}),
+	})
+
+	local dragHandle = Library.Create("Frame", {
+		Name = "SinisterDragHandle",
+		Size = UDim2.new(1, 0, 0, 54),
+		BackgroundTransparency = 1,
+		Active = true,
+		ZIndex = 928,
+		Parent = panel,
+	})
+	makeSinisterLabel(panel, "SINISTER // ADVANCED LAB", UDim2.new(1, -160, 0, 26), UDim2.fromOffset(18, 10), 17, SINISTER_GREEN, 930)
+	makeSinisterLabel(panel, "LOCAL BALLISTICS, TELEMETRY, AND VISUAL SYSTEMS", UDim2.new(1, -160, 0, 16), UDim2.fromOffset(18, 33), 9, Color3.fromRGB(112, 185, 130), 930)
+	local closePanelButton = makeSinisterButton(panel, "HIDE", UDim2.fromOffset(68, 28), UDim2.new(1, -84, 0, 13), 931)
+
+	local sidebar = Library.Create("Frame", {
+		Size = UDim2.fromOffset(132, 428),
+		Position = UDim2.fromOffset(12, 58),
+		BackgroundColor3 = Color3.fromRGB(4, 15, 8),
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+		ZIndex = 922,
+		Parent = panel,
+	}, {
+		Library.Corner(8),
+		Library.Stroke(SINISTER_GREEN, 1, 0.72),
+	})
+
+	local content = Library.Create("Frame", {
+		Size = UDim2.new(1, -162, 1, -72),
+		Position = UDim2.fromOffset(152, 58),
+		BackgroundTransparency = 1,
+		ZIndex = 922,
+		Parent = panel,
+	})
+	local pages = {}
+	local tabButtons = {}
+	local tabNames = { "BALLISTICS", "TELEMETRY", "MATRIX LAB" }
+	for index, tabName in ipairs(tabNames) do
+		local tabIndex = index
+		local tab = makeSinisterButton(sidebar, tabName, UDim2.new(1, -16, 0, 38), UDim2.fromOffset(8, 12 + ((index - 1) * 46)), 925)
+		tabButtons[index] = tab
+		pages[index] = Library.Create("Frame", {
+			Name = "Sinister" .. tabName:gsub("%s+", "") .. "Page",
+			Size = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Visible = index == 1,
+			ZIndex = 923,
+			Parent = content,
+		})
+		bindSinisterButton(tab, connect, tween, function()
+			activePage = tabIndex
+			for pageIndex, page in ipairs(pages) do
+				page.Visible = pageIndex == activePage
+				local pageButton = tabButtons[pageIndex]
+				if pageButton then
+					pageButton.BackgroundColor3 = pageIndex == activePage and Color3.fromRGB(26, 81, 42) or Color3.fromRGB(12, 35, 20)
+				end
+			end
+		end)
+	end
+	tabButtons[1].BackgroundColor3 = Color3.fromRGB(26, 81, 42)
+	makeSinisterLabel(sidebar, "NODE 7A\nSTATUS: READY\nSCOPE: LOCAL", UDim2.new(1, -16, 0, 68), UDim2.new(0, 8, 1, -80), 10, Color3.fromRGB(92, 165, 109), 925)
+
+	local ballisticPage = pages[1]
+	makeSinisterLabel(ballisticPage, "LOW-ARC BALLISTIC SOLVER", UDim2.new(1, 0, 0, 24), UDim2.fromOffset(0, 0), 15, SINISTER_GREEN, 925)
+	makeSinisterLabel(ballisticPage, "Vacuum trajectory model. Values are local calculations and do not alter weapon systems.", UDim2.new(1, 0, 0, 32), UDim2.fromOffset(0, 25), 10, Color3.fromRGB(129, 190, 143), 925)
+	local speedBox = makeSinisterInput(ballisticPage, "MUZZLE SPEED (STUDS/S)", config.DefaultSpeed or 1000, "1000", UDim2.fromOffset(0, 60), 218)
+	local distanceBox = makeSinisterInput(ballisticPage, "HORIZONTAL RANGE (STUDS)", config.DefaultDistance or 500, "500", UDim2.fromOffset(230, 60), 218)
+	local heightBox = makeSinisterInput(ballisticPage, "TARGET HEIGHT DELTA", config.DefaultHeight or 0, "0", UDim2.fromOffset(0, 116), 218)
+	local gravityBox = makeSinisterInput(ballisticPage, "GRAVITY (STUDS/S^2)", config.WorldGravity or 196.2, "196.2", UDim2.fromOffset(230, 116), 218)
+	local lateralBox = makeSinisterInput(ballisticPage, "LATERAL TARGET SPEED", config.DefaultLateralSpeed or 0, "0", UDim2.fromOffset(0, 172), 218)
+	local worldGravityButton = makeSinisterButton(ballisticPage, "USE WORLD GRAVITY", UDim2.fromOffset(218, 50), UDim2.fromOffset(230, 172), 926)
+	local solveButton = makeSinisterButton(ballisticPage, "SOLVE TRAJECTORY", UDim2.new(1, 0, 0, 36), UDim2.fromOffset(0, 230), 926)
+	local resultLabel = Library.Create("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 72),
+		Position = UDim2.fromOffset(0, 274),
+		BackgroundColor3 = Color3.fromRGB(4, 20, 10),
+		BackgroundTransparency = 0.05,
+		BorderSizePixel = 0,
+		Text = "AWAITING TRAJECTORY INPUT",
+		TextColor3 = Color3.fromRGB(175, 232, 187),
+		TextSize = 11,
+		Font = Enum.Font.Code,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		ZIndex = 925,
+		Parent = ballisticPage,
+	}, {
+		Library.Corner(7),
+		Library.Stroke(SINISTER_GREEN, 1, 0.75),
+		Library.Create("UIPadding", {
+			PaddingTop = UDim.new(0, 7),
+			PaddingBottom = UDim.new(0, 7),
+			PaddingLeft = UDim.new(0, 9),
+			PaddingRight = UDim.new(0, 9),
+		}),
+	})
+	local graph = Library.Create("Frame", {
+		Name = "TrajectoryGraph",
+		Size = UDim2.new(1, 0, 0, 68),
+		Position = UDim2.fromOffset(0, 354),
+		BackgroundColor3 = Color3.fromRGB(3, 15, 8),
+		BackgroundTransparency = 0.05,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		ZIndex = 925,
+		Parent = ballisticPage,
+	}, {
+		Library.Corner(7),
+		Library.Stroke(SINISTER_GREEN, 1, 0.78),
+	})
+	for index = 1, 3 do
+		Library.Create("Frame", {
+			Size = UDim2.new(1, 0, 0, 1),
+			Position = UDim2.new(0, 0, index / 4, 0),
+			BackgroundColor3 = SINISTER_GREEN,
+			BackgroundTransparency = 0.88,
+			BorderSizePixel = 0,
+			ZIndex = 926,
+			Parent = graph,
+		})
+	end
+	local zeroLine = Library.Create("Frame", {
+		Size = UDim2.new(1, 0, 0, 1),
+		Position = UDim2.fromScale(0, 0.5),
+		BackgroundColor3 = Color3.fromRGB(159, 232, 174),
+		BackgroundTransparency = 0.5,
+		BorderSizePixel = 0,
+		ZIndex = 927,
+		Parent = graph,
+	})
+	local arcDots = {}
+	for index = 1, 25 do
+		arcDots[index] = Library.Create("Frame", {
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Size = UDim2.fromOffset(index == 25 and 5 or 3, index == 25 and 5 or 3),
+			Position = UDim2.fromScale((index - 1) / 24, 0.5),
+			BackgroundColor3 = index == 25 and Color3.fromRGB(224, 255, 230) or SINISTER_GREEN,
+			BorderSizePixel = 0,
+			Visible = false,
+			ZIndex = 928,
+			Parent = graph,
+		}, { Library.Corner(999) })
+	end
+
+	local function renderArc(arc)
+		local minY = 0
+		local maxY = 0
+		for _, point in ipairs(type(arc) == "table" and arc or {}) do
+			minY = math.min(minY, point.Y)
+			maxY = math.max(maxY, point.Y)
+		end
+		local range = math.max(maxY - minY, 1)
+		zeroLine.Position = UDim2.new(0, 0, 1 - math.clamp((0 - minY) / range, 0, 1), 0)
+		for index, dot in ipairs(arcDots) do
+			local point = type(arc) == "table" and arc[index] or nil
+			if point then
+				dot.Position = UDim2.new(math.clamp(point.X, 0, 1), 0, 1 - math.clamp((point.Y - minY) / range, 0, 1), 0)
+				dot.Visible = true
+			else
+				dot.Visible = false
+			end
+		end
+	end
+
+	bindSinisterButton(worldGravityButton, connect, tween, function()
+		gravityBox.Text = tostring(workspace.Gravity or config.WorldGravity or 196.2)
+	end)
+	bindSinisterButton(solveButton, connect, tween, function()
+		if type(config.OnSolve) ~= "function" then
+			resultLabel.Text = "SOLVER MODULE UNAVAILABLE"
+			resultLabel.TextColor3 = Color3.fromRGB(255, 105, 105)
+			return
+		end
+		local ok, solution = pcall(config.OnSolve, {
+			Speed = speedBox.Text,
+			Distance = distanceBox.Text,
+			Height = heightBox.Text,
+			Gravity = gravityBox.Text,
+			LateralSpeed = lateralBox.Text,
+		})
+		if not ok or type(solution) ~= "table" then
+			resultLabel.Text = "SOLVER ERROR // " .. tostring(solution)
+			resultLabel.TextColor3 = Color3.fromRGB(255, 105, 105)
+			renderArc(nil)
+			return
+		end
+		resultLabel.Text = tostring(solution.Summary or "NO SOLUTION DATA")
+		resultLabel.TextColor3 = solution.Ok and Color3.fromRGB(175, 232, 187) or Color3.fromRGB(255, 120, 120)
+		renderArc(solution.Arc)
+	end)
+
+	local telemetryPage = pages[2]
+	makeSinisterLabel(telemetryPage, "LIVE LOCAL TELEMETRY", UDim2.new(1, 0, 0, 24), UDim2.fromOffset(0, 0), 15, SINISTER_GREEN, 925)
+	makeSinisterLabel(telemetryPage, "A read-only snapshot of local environment, camera, rig, and current lock state.", UDim2.new(1, 0, 0, 36), UDim2.fromOffset(0, 25), 10, Color3.fromRGB(129, 190, 143), 925)
+	local telemetryLabel = Library.Create("TextLabel", {
+		Size = UDim2.new(1, 0, 0, 300),
+		Position = UDim2.fromOffset(0, 70),
+		BackgroundColor3 = Color3.fromRGB(3, 17, 8),
+		BackgroundTransparency = 0.04,
+		BorderSizePixel = 0,
+		Text = "PRESS REFRESH TO SAMPLE",
+		TextColor3 = Color3.fromRGB(184, 238, 196),
+		TextSize = 12,
+		Font = Enum.Font.Code,
+		TextWrapped = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		ZIndex = 925,
+		Parent = telemetryPage,
+	}, {
+		Library.Corner(7),
+		Library.Stroke(SINISTER_GREEN, 1, 0.72),
+		Library.Create("UIPadding", {
+			PaddingTop = UDim.new(0, 12),
+			PaddingBottom = UDim.new(0, 12),
+			PaddingLeft = UDim.new(0, 12),
+			PaddingRight = UDim.new(0, 12),
+		}),
+	})
+	local refreshTelemetryButton = makeSinisterButton(telemetryPage, "REFRESH SNAPSHOT", UDim2.new(1, 0, 0, 38), UDim2.fromOffset(0, 382), 926)
+	local function refreshTelemetry()
+		if type(config.OnTelemetry) ~= "function" then
+			telemetryLabel.Text = "TELEMETRY MODULE UNAVAILABLE"
+			return
+		end
+		local ok, report = pcall(config.OnTelemetry)
+		telemetryLabel.Text = ok and tostring(report or "NO TELEMETRY") or ("TELEMETRY ERROR // " .. tostring(report))
+	end
+	bindSinisterButton(refreshTelemetryButton, connect, tween, refreshTelemetry)
+
+	local matrixPage = pages[3]
+	makeSinisterLabel(matrixPage, "LOCAL VIEW MANIPULATION", UDim2.new(1, 0, 0, 24), UDim2.fromOffset(0, 0), 15, SINISTER_GREEN, 925)
+	makeSinisterLabel(matrixPage, "These controls affect only your local presentation. They do not modify server state or weapon remotes.", UDim2.new(1, 0, 0, 44), UDim2.fromOffset(0, 25), 10, Color3.fromRGB(129, 190, 143), 925)
+	local matrixVisionButton = makeSinisterButton(matrixPage, "MATRIX VISION: " .. (matrixVisionEnabled and "ON" or "OFF"), UDim2.new(1, 0, 0, 42), UDim2.fromOffset(0, 82), 926)
+	local replayButton = makeSinisterButton(matrixPage, "REPLAY GEOMETRIC HANDSHAKE", UDim2.new(1, 0, 0, 42), UDim2.fromOffset(0, 134), 926)
+	local resetInputsButton = makeSinisterButton(matrixPage, "RESET BALLISTIC INPUTS", UDim2.new(1, 0, 0, 42), UDim2.fromOffset(0, 186), 926)
+	local lockNodeButton = makeSinisterButton(matrixPage, "LOCK CLASSIFIED NODE", UDim2.new(1, 0, 0, 42), UDim2.fromOffset(0, 238), 926)
+	local matrixInfo = makeSinisterLabel(matrixPage, "MATRIX ENGINE\nEVENT DRIVEN // NO RENDER LOOP\nGEOMETRY: TWEEN PIPELINE\nAUTHORIZATION: SESSION SCOPED", UDim2.new(1, 0, 0, 112), UDim2.fromOffset(0, 306), 11, Color3.fromRGB(151, 220, 166), 925)
+	matrixInfo.BackgroundColor3 = Color3.fromRGB(3, 17, 8)
+	matrixInfo.BackgroundTransparency = 0.1
+
+	local function showPanel()
+		gateLayer.Visible = false
+		loadingOverlay.Visible = false
+		panel.Visible = true
+		panel.Size = UDim2.fromOffset(590, 474)
+		panel.BackgroundTransparency = 0.35
+		tween(panel, 0.22, {
+			Size = UDim2.fromOffset(620, 500),
+			BackgroundTransparency = 0.02,
+		})
+		refreshTelemetry()
+	end
+
+	local function playMatrixBoot()
+		animationToken += 1
+		local token = animationToken
+		panel.Visible = false
+		gateLayer.Visible = false
+		loadingOverlay.Visible = true
+		loadingOverlay.BackgroundTransparency = 0.02
+		triangle.Rotation = 0
+		triangle.Size = UDim2.fromOffset(92, 92)
+		progressFill.Size = UDim2.fromScale(0, 1)
+		bootStatus.Text = "DECRYPTING GEOMETRY..."
+		bootTitle.TextTransparency = 0
+		bootStatus.TextTransparency = 0
+		for index, column in ipairs(matrixColumns) do
+			column.Position = UDim2.new((index - 0.5) / #matrixColumns, -21, 0, -190 - ((index % 4) * 35))
+			column.TextTransparency = 0.18 + ((index % 3) * 0.12)
+			tweenService:Create(column, TweenInfo.new(2.25, Enum.EasingStyle.Linear, Enum.EasingDirection.Out, 0, false, (index % 5) * 0.08), {
+				Position = UDim2.new((index - 0.5) / #matrixColumns, -21 + ((index % 2 == 0) and 25 or -25), 1, 35),
+				TextTransparency = 0.82,
+			}):Play()
+		end
+		for index, shape in ipairs(geometry) do
+			shape.Position = UDim2.new(-0.12, 0, 0.08 + ((index % 7) * 0.13), 0)
+			shape.Rotation = (index * 19) % 90
+			tweenService:Create(shape, TweenInfo.new(2.15, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, 0, false, (index - 1) * 0.06), {
+				Position = UDim2.new(1.12, 0, 0.12 + (((index * 3) % 7) * 0.12), 0),
+				Rotation = shape.Rotation + 240,
+			}):Play()
+		end
+		tweenService:Create(triangle, TweenInfo.new(2.7, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+			Rotation = 720,
+			Size = UDim2.fromOffset(154, 154),
+		}):Play()
+		tweenService:Create(progressFill, TweenInfo.new(2.65, Enum.EasingStyle.Linear, Enum.EasingDirection.Out), {
+			Size = UDim2.fromScale(1, 1),
+		}):Play()
+		task.delay(1.2, function()
+			if token == animationToken and bootStatus.Parent then
+				bootStatus.Text = "VECTOR CORE ONLINE // LOADING LAB..."
+			end
+		end)
+		task.delay(2.85, function()
+			if token ~= animationToken or not loadingOverlay.Parent then
+				return
+			end
+			tween(loadingOverlay, 0.18, { BackgroundTransparency = 1 })
+			bootTitle.TextTransparency = 1
+			bootStatus.TextTransparency = 1
+			task.delay(0.2, function()
+				if token == animationToken and loadingOverlay.Parent then
+					showPanel()
+				end
+			end)
+		end)
+	end
+
+	local function lockNode()
+		animationToken += 1
+		unlocked = false
+		panel.Visible = false
+		loadingOverlay.Visible = false
+		gateLayer.Visible = false
+		codeBox.Text = ""
+		gateStatus.Text = "NODE LOCKED"
+		gateStatus.TextColor3 = Color3.fromRGB(112, 180, 128)
+		if type(config.OnLocked) == "function" then
+			config.OnLocked()
+		end
+	end
+
+	local function attemptUnlock()
+		local entered = tostring(codeBox.Text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+		if entered:lower() ~= accessCode:lower() then
+			gateStatus.Text = "ACCESS DENIED // INVALID PHRASE"
+			gateStatus.TextColor3 = Color3.fromRGB(255, 90, 90)
+			codeBox.Text = ""
+			local originalPosition = gate.Position
+			tween(gate, 0.06, { Position = originalPosition + UDim2.fromOffset(8, 0) })
+			task.delay(0.07, function()
+				if gate.Parent then
+					tween(gate, 0.1, { Position = originalPosition })
+				end
+			end)
+			return
+		end
+		unlocked = true
+		codeBox:ReleaseFocus()
+		gateStatus.Text = "ACCESS ACCEPTED"
+		gateStatus.TextColor3 = SINISTER_GREEN
+		if type(config.OnUnlocked) == "function" then
+			config.OnUnlocked()
+		end
+		playMatrixBoot()
+	end
+
+	local function open()
+		if unlocked then
+			showPanel()
+			return
+		end
+		panel.Visible = false
+		loadingOverlay.Visible = false
+		gateLayer.Visible = true
+		gateStatus.Text = "NODE LOCKED"
+		gateStatus.TextColor3 = Color3.fromRGB(112, 180, 128)
+		gate.Position = UDim2.fromScale(0.5, 0.5)
+		gate.Size = UDim2.fromOffset(360, 204)
+		gate.BackgroundTransparency = 0.35
+		tween(gate, 0.2, {
+			Size = UDim2.fromOffset(390, 224),
+			BackgroundTransparency = 0.02,
+		})
+		task.defer(function()
+			if codeBox.Parent and gateLayer.Visible then
+				codeBox:CaptureFocus()
+			end
+		end)
+	end
+
+	bindSinisterButton(gateClose, connect, tween, function()
+		codeBox:ReleaseFocus()
+		gateLayer.Visible = false
+	end)
+	bindSinisterButton(unlockButton, connect, tween, attemptUnlock)
+	connect(codeBox.FocusLost, function(enterPressed)
+		if enterPressed then
+			attemptUnlock()
+		end
+	end)
+	bindSinisterButton(closePanelButton, connect, tween, function()
+		panel.Visible = false
+	end)
+	bindSinisterButton(matrixVisionButton, connect, tween, function()
+		matrixVisionEnabled = not matrixVisionEnabled
+		if type(config.OnMatrixVision) == "function" then
+			local ok, applied = pcall(config.OnMatrixVision, matrixVisionEnabled)
+			if ok and type(applied) == "boolean" then
+				matrixVisionEnabled = applied
+			end
+		end
+		matrixVisionButton.Text = "MATRIX VISION: " .. (matrixVisionEnabled and "ON" or "OFF")
+	end)
+	bindSinisterButton(replayButton, connect, tween, playMatrixBoot)
+	bindSinisterButton(resetInputsButton, connect, tween, function()
+		speedBox.Text = tostring(config.DefaultSpeed or 1000)
+		distanceBox.Text = tostring(config.DefaultDistance or 500)
+		heightBox.Text = tostring(config.DefaultHeight or 0)
+		gravityBox.Text = tostring(config.WorldGravity or 196.2)
+		lateralBox.Text = tostring(config.DefaultLateralSpeed or 0)
+		resultLabel.Text = "BALLISTIC INPUTS RESET"
+		resultLabel.TextColor3 = Color3.fromRGB(175, 232, 187)
+		renderArc(nil)
+	end)
+	bindSinisterButton(lockNodeButton, connect, tween, lockNode)
+
+	local dragging = false
+	local dragStart = nil
+	local startPosition = nil
+	local dragInput = nil
+	connect(dragHandle.InputBegan, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			dragStart = input.Position
+			startPosition = panel.Position
+			dragInput = input
+		end
+	end)
+	connect(dragHandle.InputChanged, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			dragInput = input
+		end
+	end)
+	connect(inputService.InputChanged, function(input)
+		if not dragging or input ~= dragInput or not dragStart or not startPosition then
+			return
+		end
+		local delta = input.Position - dragStart
+		panel.Position = UDim2.new(
+			startPosition.X.Scale,
+			startPosition.X.Offset + delta.X,
+			startPosition.Y.Scale,
+			startPosition.Y.Offset + delta.Y
+		)
+	end)
+	connect(inputService.InputEnded, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			dragging = false
+			dragStart = nil
+			startPosition = nil
+			dragInput = nil
+		end
+	end)
+
+	return {
+		GateLayer = gateLayer,
+		Panel = panel,
+		LoadingOverlay = loadingOverlay,
+		Open = open,
+		Close = function()
+			animationToken += 1
+			gateLayer.Visible = false
+			loadingOverlay.Visible = false
+			panel.Visible = false
+		end,
+		Lock = lockNode,
+		Replay = playMatrixBoot,
+		IsUnlocked = function()
+			return unlocked
+		end,
+		SetMatrixVision = function(enabled)
+			matrixVisionEnabled = enabled == true
+			matrixVisionButton.Text = "MATRIX VISION: " .. (matrixVisionEnabled and "ON" or "OFF")
+		end,
+	}
 end
 
 return Library
