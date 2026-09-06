@@ -984,7 +984,7 @@ function Library.MakeStudioShell(config)
 		Size = UDim2.new(1, -20, 0, 22),
 		Position = UDim2.new(0, 10, 1, -30),
 		BackgroundTransparency = 1,
-		Text = "v" .. tostring(config.Version or "0.6.1") .. "   •   SESSION SETTINGS ARE PRESERVED",
+		Text = "v" .. tostring(config.Version or "0.6.2") .. "   •   SESSION SETTINGS ARE PRESERVED",
 		TextColor3 = theme.Muted,
 		TextSize = 8,
 		Font = Enum.Font.GothamMedium,
