@@ -625,7 +625,7 @@ function Library.MakeModernCategoryShell(config)
 		rail.Visible = modernEnabled
 		railShadow.Visible = modernEnabled
 		categoryLabel.Visible = modernEnabled
-		modeToggle.Visible = mode ~= "Studio"
+		modeToggle.Visible = true
 		modeToggle.Text = modernEnabled and "Modern" or "Classic"
 		panelStroke.Enabled = modernEnabled
 	end
@@ -984,7 +984,7 @@ function Library.MakeStudioShell(config)
 		Size = UDim2.new(1, -20, 0, 22),
 		Position = UDim2.new(0, 10, 1, -30),
 		BackgroundTransparency = 1,
-		Text = "v" .. tostring(config.Version or "0.6.2") .. "   •   SESSION SETTINGS ARE PRESERVED",
+		Text = "v" .. tostring(config.Version or "0.6.3") .. "   •   SESSION SETTINGS ARE PRESERVED",
 		TextColor3 = theme.Muted,
 		TextSize = 8,
 		Font = Enum.Font.GothamMedium,
@@ -1368,6 +1368,8 @@ function Library.MakeStudioShell(config)
 		RefreshTheme = api.RefreshTheme,
 	}
 end
+
+Library.MakeStudioShell = nil
 
 function Library.MakeButton(config)
 	local theme = config.Theme
