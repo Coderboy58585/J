@@ -4,7 +4,7 @@
 local Library = {}
 
 Library.Name = "JuliaUILibrary"
-Library.Version = "0.1.0"
+Library.Version = "0.2.0"
 
 function Library.Create(className, props, children)
 	local object = Instance.new(className)
@@ -174,6 +174,7 @@ function Library.MakeControlPanel(config)
 	})
 
 	local title = Library.Create("TextLabel", {
+		Name = "PanelTitle",
 		Size = UDim2.new(1, -20, 0, 32),
 		Position = UDim2.fromOffset(10, 8),
 		BackgroundTransparency = 1,
@@ -186,6 +187,7 @@ function Library.MakeControlPanel(config)
 	})
 
 	local subtitle = Library.Create("TextLabel", {
+		Name = "PanelSubtitle",
 		Size = UDim2.new(1, -20, 0, 34),
 		Position = UDim2.fromOffset(10, 36),
 		BackgroundTransparency = 1,
@@ -623,6 +625,7 @@ function Library.MakeModernCategoryShell(config)
 		rail.Visible = modernEnabled
 		railShadow.Visible = modernEnabled
 		categoryLabel.Visible = modernEnabled
+		modeToggle.Visible = mode ~= "Studio"
 		modeToggle.Text = modernEnabled and "Modern" or "Classic"
 		panelStroke.Enabled = modernEnabled
 	end
@@ -650,12 +653,731 @@ function Library.MakeModernCategoryShell(config)
 	}
 end
 
+function Library.MakeStudioShell(config)
+	local theme = config.Theme
+	local panel = config.Panel
+	local screenGui = config.ScreenGui
+	local connect = config.Connect
+	local tween = config.Tween or function(object, _, props)
+		for property, value in pairs(props or {}) do
+			object[property] = value
+		end
+	end
+	local categories = config.Categories or {}
+	local onCategorySelected = config.OnCategorySelected or function() end
+	local onModeToggle = config.OnModeToggle or function() end
+	local getScale = config.GetScale or function()
+		return 1
+	end
+
+	local shell = Library.Create("Frame", {
+		Name = "StudioShell",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Visible = false,
+		ZIndex = 10,
+		Parent = panel,
+	})
+
+	local panelStroke = Library.Create("UIStroke", {
+		Name = "StudioPanelStroke",
+		Color = theme.CurrentAccent,
+		Thickness = 1.25,
+		Transparency = 0.34,
+		Enabled = false,
+		Parent = panel,
+	})
+
+	local panelScale = panel:FindFirstChild("StudioUIScale") or Library.Create("UIScale", {
+		Name = "StudioUIScale",
+		Scale = 1,
+		Parent = panel,
+	})
+
+	local ambient = Library.Create("Frame", {
+		Name = "Ambient",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(10, 13, 19),
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+		ZIndex = 10,
+		Parent = shell,
+	}, {
+		Library.Corner(18),
+		Library.Create("UIGradient", {
+			Color = ColorSequence.new({
+				ColorSequenceKeypoint.new(0, Color3.fromRGB(19, 24, 34)),
+				ColorSequenceKeypoint.new(0.52, Color3.fromRGB(11, 14, 21)),
+				ColorSequenceKeypoint.new(1, Color3.fromRGB(16, 18, 27)),
+			}),
+			Rotation = 24,
+		}),
+	})
+
+	for index = 1, 5 do
+		Library.Create("Frame", {
+			Name = "GridLine" .. tostring(index),
+			Size = UDim2.new(0, 1, 1, -24),
+			Position = UDim2.new(index / 6, 0, 0, 12),
+			BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+			BackgroundTransparency = 0.965,
+			BorderSizePixel = 0,
+			ZIndex = 11,
+			Parent = ambient,
+		})
+	end
+
+	local logo = Library.Create("Frame", {
+		Name = "LogoMark",
+		Size = UDim2.fromOffset(38, 38),
+		Position = UDim2.fromOffset(16, 15),
+		BackgroundColor3 = theme.CurrentAccent,
+		BorderSizePixel = 0,
+		ZIndex = 22,
+		Parent = shell,
+	}, { Library.Corner(11) })
+	local logoGradient = Library.Create("UIGradient", {
+		Color = ColorSequence.new(theme.GradientA, theme.GradientB),
+		Rotation = 35,
+		Parent = logo,
+	})
+
+	Library.Create("TextLabel", {
+		Name = "LogoText",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text = "J",
+		TextColor3 = theme.Text,
+		TextSize = 19,
+		Font = Enum.Font.GothamBlack,
+		ZIndex = 23,
+		Parent = logo,
+	})
+
+	local title = Library.Create("TextLabel", {
+		Name = "StudioTitle",
+		Size = UDim2.fromOffset(260, 24),
+		Position = UDim2.fromOffset(66, 13),
+		BackgroundTransparency = 1,
+		Text = "JULIA CONTROL",
+		TextColor3 = theme.Text,
+		TextSize = 16,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 22,
+		Parent = shell,
+	})
+
+	local subtitle = Library.Create("TextLabel", {
+		Name = "StudioSubtitle",
+		Size = UDim2.fromOffset(340, 18),
+		Position = UDim2.fromOffset(66, 35),
+		BackgroundTransparency = 1,
+		Text = "SESSION READY  /  K TO TOGGLE  /  DRAG THE HEADER",
+		TextColor3 = theme.Muted,
+		TextSize = 9,
+		Font = Enum.Font.GothamMedium,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 22,
+		Parent = shell,
+	})
+
+	local statusPill = Library.Create("TextLabel", {
+		Name = "StatusPill",
+		Size = UDim2.fromOffset(76, 24),
+		Position = UDim2.new(1, -174, 0, 22),
+		BackgroundColor3 = Color3.fromRGB(28, 39, 35),
+		BackgroundTransparency = 0.08,
+		BorderSizePixel = 0,
+		Text = "●  ONLINE",
+		TextColor3 = Color3.fromRGB(126, 235, 169),
+		TextSize = 9,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 24,
+		Parent = shell,
+	}, { Library.Corner(999) })
+
+	local modeToggle = Library.Create("TextButton", {
+		Name = "StudioModeToggle",
+		Size = UDim2.fromOffset(82, 28),
+		Position = UDim2.new(1, -94, 0, 20),
+		BackgroundColor3 = Color3.fromRGB(31, 37, 50),
+		BackgroundTransparency = 0.02,
+		BorderSizePixel = 0,
+		Text = "STUDIO  III",
+		TextColor3 = theme.Text,
+		TextSize = 9,
+		Font = Enum.Font.GothamBold,
+		AutoButtonColor = false,
+		ZIndex = 30,
+		Parent = shell,
+	}, {
+		Library.Corner(9),
+		Library.Stroke(theme.CurrentAccent, 1, 0.48),
+	})
+
+	local divider = Library.Create("Frame", {
+		Name = "HeaderDivider",
+		Size = UDim2.new(1, -28, 0, 1),
+		Position = UDim2.fromOffset(14, 64),
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		BackgroundTransparency = 0.91,
+		BorderSizePixel = 0,
+		ZIndex = 14,
+		Parent = shell,
+	})
+
+	local sidebar = Library.Create("Frame", {
+		Name = "StudioSidebar",
+		Size = UDim2.fromOffset(164, 474),
+		Position = UDim2.fromOffset(14, 74),
+		BackgroundColor3 = Color3.fromRGB(14, 18, 26),
+		BackgroundTransparency = 0.1,
+		BorderSizePixel = 0,
+		ZIndex = 14,
+		Parent = shell,
+	}, {
+		Library.Corner(13),
+		Library.Stroke(Color3.fromRGB(255, 255, 255), 1, 0.92),
+	})
+
+	Library.Create("TextLabel", {
+		Name = "NavigationLabel",
+		Size = UDim2.new(1, -20, 0, 22),
+		Position = UDim2.fromOffset(10, 9),
+		BackgroundTransparency = 1,
+		Text = "WORKSPACES",
+		TextColor3 = theme.Muted,
+		TextSize = 9,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 18,
+		Parent = sidebar,
+	})
+
+	local content = Library.Create("Frame", {
+		Name = "StudioContent",
+		Size = UDim2.new(1, -202, 1, -86),
+		Position = UDim2.fromOffset(188, 74),
+		BackgroundColor3 = Color3.fromRGB(17, 21, 30),
+		BackgroundTransparency = 0.04,
+		BorderSizePixel = 0,
+		ClipsDescendants = true,
+		ZIndex = 14,
+		Parent = shell,
+	}, {
+		Library.Corner(13),
+		Library.Stroke(Color3.fromRGB(255, 255, 255), 1, 0.92),
+	})
+
+	local categoryTitle = Library.Create("TextLabel", {
+		Name = "StudioCategoryTitle",
+		Size = UDim2.new(1, -30, 0, 25),
+		Position = UDim2.fromOffset(15, 10),
+		BackgroundTransparency = 1,
+		Text = categories[1] and categories[1].Name or "Overview",
+		TextColor3 = theme.Text,
+		TextSize = 17,
+		Font = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 19,
+		Parent = content,
+	})
+
+	local categoryHint = Library.Create("TextLabel", {
+		Name = "StudioCategoryHint",
+		Size = UDim2.new(1, -30, 0, 18),
+		Position = UDim2.fromOffset(15, 35),
+		BackgroundTransparency = 1,
+		Text = categories[1] and categories[1].Description or "Session controls and preferences",
+		TextColor3 = theme.Muted,
+		TextSize = 10,
+		Font = Enum.Font.Gotham,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		ZIndex = 19,
+		Parent = content,
+	})
+
+	local contentDivider = Library.Create("Frame", {
+		Name = "ContentDivider",
+		Size = UDim2.new(1, -30, 0, 1),
+		Position = UDim2.fromOffset(15, 58),
+		BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+		BackgroundTransparency = 0.92,
+		BorderSizePixel = 0,
+		ZIndex = 18,
+		Parent = content,
+	})
+
+	local categoryButtons = {}
+	local pageFrames = {}
+	local pageLayouts = {}
+	for index, category in ipairs(categories) do
+		local page = category.Page or index
+		local button = Library.Create("TextButton", {
+			Name = "StudioCategory_" .. tostring(page),
+			Size = UDim2.new(1, -16, 0, 38),
+			Position = UDim2.fromOffset(8, 35 + ((index - 1) * 43)),
+			BackgroundColor3 = Color3.fromRGB(24, 29, 40),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			Text = "  " .. (category.Name or ("Page " .. tostring(page))),
+			TextColor3 = theme.Muted,
+			TextSize = 11,
+			Font = Enum.Font.GothamMedium,
+			TextXAlignment = Enum.TextXAlignment.Left,
+			AutoButtonColor = false,
+			ZIndex = 18,
+			Parent = sidebar,
+		}, { Library.Corner(9) })
+		categoryButtons[page] = button
+		connect(button.MouseEnter, function()
+			if button:GetAttribute("JuliaSelected") ~= true then
+				tween(button, 0.12, { BackgroundTransparency = 0.45, TextColor3 = theme.Text })
+			end
+		end)
+		connect(button.MouseLeave, function()
+			if button:GetAttribute("JuliaSelected") ~= true then
+				tween(button, 0.12, { BackgroundTransparency = 1, TextColor3 = theme.Muted })
+			end
+		end)
+		connect(button.MouseButton1Click, function()
+			onCategorySelected(page)
+		end)
+
+		local pageFrame = Library.Create("ScrollingFrame", {
+			Name = "StudioPage_" .. tostring(page),
+			Size = UDim2.new(1, -18, 1, -72),
+			Position = UDim2.fromOffset(9, 66),
+			BackgroundTransparency = 1,
+			BorderSizePixel = 0,
+			CanvasSize = UDim2.fromOffset(0, 0),
+			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+			ScrollingDirection = Enum.ScrollingDirection.Y,
+			ScrollBarThickness = 3,
+			ScrollBarImageColor3 = theme.CurrentAccent,
+			ScrollBarImageTransparency = 0.25,
+			Visible = index == 1,
+			ZIndex = 18,
+			Parent = content,
+		}, {
+			Library.Create("UIPadding", {
+				PaddingTop = UDim.new(0, 2),
+				PaddingBottom = UDim.new(0, 10),
+				PaddingLeft = UDim.new(0, 4),
+				PaddingRight = UDim.new(0, 7),
+			}),
+		})
+		local layout = Library.Create("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			SortOrder = Enum.SortOrder.LayoutOrder,
+			Padding = UDim.new(0, 8),
+			Parent = pageFrame,
+		})
+		pageFrames[page] = pageFrame
+		pageLayouts[page] = layout
+	end
+
+	local footer = Library.Create("TextLabel", {
+		Name = "StudioFooter",
+		Size = UDim2.new(1, -20, 0, 22),
+		Position = UDim2.new(0, 10, 1, -30),
+		BackgroundTransparency = 1,
+		Text = "v" .. tostring(config.Version or "0.6.0") .. "   •   SESSION SETTINGS ARE PRESERVED",
+		TextColor3 = theme.Muted,
+		TextSize = 8,
+		Font = Enum.Font.GothamMedium,
+		TextXAlignment = Enum.TextXAlignment.Center,
+		ZIndex = 18,
+		Parent = sidebar,
+	})
+
+	local loadingOverlay = Library.Create("Frame", {
+		Name = "StudioStartup",
+		Size = UDim2.fromScale(1, 1),
+		BackgroundColor3 = Color3.fromRGB(8, 10, 15),
+		BackgroundTransparency = 0,
+		BorderSizePixel = 0,
+		Visible = false,
+		ZIndex = 70,
+		Parent = panel,
+	}, { Library.Corner(18) })
+	local loadingTitle = Library.Create("TextLabel", {
+		Name = "LoadingTitle",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(320, 34),
+		Position = UDim2.fromScale(0.5, 0.43),
+		BackgroundTransparency = 1,
+		Text = "JULIA CONTROL",
+		TextColor3 = theme.Text,
+		TextSize = 22,
+		Font = Enum.Font.GothamBlack,
+		ZIndex = 72,
+		Parent = loadingOverlay,
+	})
+	local loadingStatus = Library.Create("TextLabel", {
+		Name = "LoadingStatus",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(320, 22),
+		Position = UDim2.fromScale(0.5, 0.49),
+		BackgroundTransparency = 1,
+		Text = "PREPARING SESSION  0%",
+		TextColor3 = theme.Muted,
+		TextSize = 9,
+		Font = Enum.Font.GothamBold,
+		ZIndex = 72,
+		Parent = loadingOverlay,
+	})
+	local loadingTrack = Library.Create("Frame", {
+		Name = "LoadingTrack",
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Size = UDim2.fromOffset(250, 4),
+		Position = UDim2.fromScale(0.5, 0.54),
+		BackgroundColor3 = Color3.fromRGB(31, 36, 48),
+		BorderSizePixel = 0,
+		ZIndex = 72,
+		Parent = loadingOverlay,
+	}, { Library.Corner(999) })
+	local loadingFill = Library.Create("Frame", {
+		Name = "LoadingFill",
+		Size = UDim2.new(0, 0, 1, 0),
+		BackgroundColor3 = theme.CurrentAccent,
+		BorderSizePixel = 0,
+		ZIndex = 73,
+		Parent = loadingTrack,
+	}, { Library.Corner(999) })
+
+	local originals = {}
+	local pageItems = {}
+	local activePage = categories[1] and (categories[1].Page or 1) or 1
+	local active = false
+	local adopted = false
+	local density = config.Density or "Comfortable"
+	local visibilityRevision = 0
+	local loadingRevision = 0
+	local renderedPage = nil
+
+	local function responsiveScale()
+		local wanted = math.clamp(tonumber(getScale()) or 1, 0.7, 1.2)
+		local camera = workspace.CurrentCamera
+		if not camera then
+			return wanted
+		end
+		local viewport = camera.ViewportSize
+		local available = math.min((viewport.X - 24) / 720, (viewport.Y - 24) / 560)
+		return math.max(0.52, math.min(wanted, available))
+	end
+
+	local function remember(item)
+		if originals[item] then
+			return
+		end
+		originals[item] = {
+			Parent = item.Parent,
+			Position = item.Position,
+			Size = item.Size,
+			LayoutOrder = item.LayoutOrder,
+			ZIndex = item.ZIndex,
+			Font = (item:IsA("TextButton") or item:IsA("TextLabel")) and item.Font or nil,
+			TextSize = (item:IsA("TextButton") or item:IsA("TextLabel")) and item.TextSize or nil,
+			TextXAlignment = (item:IsA("TextButton") or item:IsA("TextLabel")) and item.TextXAlignment or nil,
+		}
+	end
+
+	local function itemHeight(item)
+		local saved = originals[item]
+		if item:IsA("TextButton") then
+			return density == "Compact" and 34 or 40
+		end
+		return math.max(20, saved and saved.Size.Y.Offset or item.Size.Y.Offset)
+	end
+
+	local function attachControls()
+		if not adopted then
+			return
+		end
+		for page, items in pairs(pageItems) do
+			local pageFrame = pageFrames[page]
+			if pageFrame then
+				for order, item in ipairs(items) do
+					if item and item.Parent then
+						item.Parent = pageFrame
+						item.LayoutOrder = order
+						item.Position = UDim2.fromOffset(0, 0)
+						item.Size = UDim2.new(1, 0, 0, itemHeight(item))
+						item.ZIndex = 22
+						if item:IsA("TextButton") then
+							item.Font = Enum.Font.GothamMedium
+							item.TextSize = density == "Compact" and 11 or 12
+							item.BackgroundColor3 = Color3.fromRGB(27, 33, 45)
+							item.BackgroundTransparency = 0.06
+						end
+						item.Visible = page == activePage
+					end
+				end
+			end
+		end
+	end
+
+	local function restoreControls()
+		for item, saved in pairs(originals) do
+			if item and item.Parent then
+				item.Parent = saved.Parent
+				item.Position = saved.Position
+				item.Size = saved.Size
+				item.LayoutOrder = saved.LayoutOrder
+				item.ZIndex = saved.ZIndex
+				if saved.Font then
+					item.Font = saved.Font
+					item.TextSize = saved.TextSize
+					item.TextXAlignment = saved.TextXAlignment
+				end
+			end
+		end
+	end
+
+	local api = {}
+	function api.AdoptControls(pageButtons, pageDecor)
+		table.clear(pageItems)
+		for page = 1, math.max(#pageButtons, #pageDecor) do
+			local items = {}
+			for _, item in ipairs(pageButtons[page] or {}) do
+				remember(item)
+				table.insert(items, item)
+			end
+			for _, item in ipairs(pageDecor[page] or {}) do
+				remember(item)
+				table.insert(items, item)
+			end
+			table.sort(items, function(a, b)
+				local aSaved = originals[a]
+				local bSaved = originals[b]
+				local ay = aSaved and aSaved.Position.Y.Offset or 0
+				local by = bSaved and bSaved.Position.Y.Offset or 0
+				if ay == by then
+					local ax = aSaved and aSaved.Position.X.Offset or 0
+					local bx = bSaved and bSaved.Position.X.Offset or 0
+					return ax < bx
+				end
+				return ay < by
+			end)
+			pageItems[page] = items
+		end
+		adopted = true
+		renderedPage = nil
+		if active then
+			attachControls()
+		end
+	end
+
+	function api.SetActivePage(page)
+		if renderedPage == page then
+			return
+		end
+		activePage = page
+		local selectedCategory = nil
+		for _, category in ipairs(categories) do
+			local categoryPage = category.Page or 1
+			local selected = categoryPage == page
+			local button = categoryButtons[categoryPage]
+			if button then
+				button:SetAttribute("JuliaSelected", selected)
+				button.BackgroundColor3 = selected and theme.CurrentAccent or Color3.fromRGB(24, 29, 40)
+				button.BackgroundTransparency = selected and 0.12 or 1
+				button.TextColor3 = selected and theme.Text or theme.Muted
+			end
+			if selected then
+				selectedCategory = category
+			end
+		end
+		categoryTitle.Text = selectedCategory and selectedCategory.Name or ("Page " .. tostring(page))
+		categoryHint.Text = selectedCategory and selectedCategory.Description or "Session controls and preferences"
+		for pageNumber, pageFrame in pairs(pageFrames) do
+			pageFrame.Visible = active and pageNumber == page
+			if pageNumber == page then
+				pageFrame.CanvasPosition = Vector2.zero
+			end
+		end
+		for pageNumber, items in pairs(pageItems) do
+			for _, item in ipairs(items) do
+				if item and item.Parent then
+					item.Visible = pageNumber == page
+				end
+			end
+		end
+		renderedPage = page
+	end
+
+	function api.SetMode(mode)
+		local wasActive = active
+		active = mode == "Studio"
+		shell.Visible = active
+		panelStroke.Enabled = active
+		loadingRevision += 1
+		loadingOverlay.Visible = false
+		if active then
+			if not wasActive then
+				attachControls()
+				renderedPage = nil
+			end
+			api.SetActivePage(activePage)
+			panelScale.Scale = responsiveScale()
+		elseif wasActive then
+			restoreControls()
+			renderedPage = nil
+			for _, pageFrame in pairs(pageFrames) do
+				pageFrame.Visible = false
+			end
+			panelScale.Scale = 1
+		end
+	end
+
+	function api.SetDensity(value)
+		local nextDensity = value == "Compact" and "Compact" or "Comfortable"
+		if nextDensity == density then
+			return
+		end
+		density = nextDensity
+		for _, layout in pairs(pageLayouts) do
+			layout.Padding = UDim.new(0, density == "Compact" and 5 or 8)
+		end
+		if active then
+			attachControls()
+		end
+	end
+
+	function api.SetScale()
+		if active then
+			panelScale.Scale = responsiveScale()
+		end
+	end
+
+	function api.SetVisible(visible, animate)
+		visibilityRevision += 1
+		local revision = visibilityRevision
+		local baseScale = responsiveScale()
+		if not visible then
+			loadingRevision += 1
+			loadingOverlay.Visible = false
+		end
+		if not active or not animate then
+			panel.Visible = visible
+			panelScale.Scale = active and baseScale or 1
+			return
+		end
+		if visible then
+			panel.Visible = true
+			panelScale.Scale = baseScale * 0.94
+			tween(panelScale, 0.22, { Scale = baseScale })
+		else
+			tween(panelScale, 0.14, { Scale = baseScale * 0.96 })
+			task.delay(0.15, function()
+				if revision == visibilityRevision then
+					panel.Visible = false
+				end
+			end)
+		end
+	end
+
+	function api.AnimateOpen(showLoader)
+		if not active then
+			return
+		end
+		loadingRevision += 1
+		local revision = loadingRevision
+		panel.Visible = true
+		local baseScale = responsiveScale()
+		panelScale.Scale = baseScale * 0.9
+		tween(panelScale, 0.3, { Scale = baseScale })
+		if not showLoader then
+			loadingOverlay.Visible = false
+			return
+		end
+		loadingOverlay.Visible = true
+		loadingOverlay.BackgroundTransparency = 0
+		loadingTitle.TextTransparency = 0
+		loadingStatus.TextTransparency = 0
+		loadingFill.Size = UDim2.new(0, 0, 1, 0)
+		task.spawn(function()
+			local stages = {
+				{ 0.24, "MOUNTING INTERFACE  24%" },
+				{ 0.53, "RESTORING SESSION  53%" },
+				{ 0.81, "BINDING CONTROLS  81%" },
+				{ 1, "SESSION READY  100%" },
+			}
+			for _, stage in ipairs(stages) do
+				if revision ~= loadingRevision or not active then
+					return
+				end
+				loadingStatus.Text = stage[2]
+				tween(loadingFill, 0.16, { Size = UDim2.new(stage[1], 0, 1, 0) })
+				task.wait(0.17)
+			end
+			if revision ~= loadingRevision or not active then
+				return
+			end
+			tween(loadingOverlay, 0.22, { BackgroundTransparency = 1 })
+			tween(loadingTitle, 0.18, { TextTransparency = 1 })
+			tween(loadingStatus, 0.18, { TextTransparency = 1 })
+			task.wait(0.24)
+			if revision == loadingRevision then
+				loadingOverlay.Visible = false
+			end
+		end)
+	end
+
+	function api.RefreshTheme()
+		panelStroke.Color = theme.CurrentAccent
+		logo.BackgroundColor3 = theme.CurrentAccent
+		logoGradient.Color = ColorSequence.new(theme.GradientA, theme.GradientB)
+		loadingFill.BackgroundColor3 = theme.CurrentAccent
+		local toggleStroke = modeToggle:FindFirstChildOfClass("UIStroke")
+		if toggleStroke then
+			toggleStroke.Color = theme.CurrentAccent
+		end
+		for page, button in pairs(categoryButtons) do
+			if page == activePage then
+				button.BackgroundColor3 = theme.CurrentAccent
+			end
+		end
+		for _, pageFrame in pairs(pageFrames) do
+			pageFrame.ScrollBarImageColor3 = theme.CurrentAccent
+		end
+	end
+
+	connect(modeToggle.MouseEnter, function()
+		tween(modeToggle, 0.12, { BackgroundColor3 = Color3.fromRGB(43, 50, 67) })
+	end)
+	connect(modeToggle.MouseLeave, function()
+		tween(modeToggle, 0.12, { BackgroundColor3 = Color3.fromRGB(31, 37, 50) })
+	end)
+	connect(modeToggle.MouseButton1Click, onModeToggle)
+
+	return {
+		Shell = shell,
+		ModeToggle = modeToggle,
+		PanelScale = panelScale,
+		SetMode = api.SetMode,
+		SetActivePage = api.SetActivePage,
+		SetDensity = api.SetDensity,
+		SetScale = api.SetScale,
+		SetVisible = api.SetVisible,
+		AnimateOpen = api.AnimateOpen,
+		AdoptControls = api.AdoptControls,
+		RefreshTheme = api.RefreshTheme,
+	}
+end
+
 function Library.MakeButton(config)
 	local theme = config.Theme
 	local panel = config.Panel
 	local connect = config.Connect
 	local tween = config.Tween
 	local callback = config.Callback or function() end
+	local getMode = config.GetMode or function()
+		return "Classic"
+	end
 	local pageButtons = config.PageButtons
 	local activePage = config.ActivePage or 1
 	local page = math.clamp(config.Page or 1, 1, #pageButtons)
@@ -692,6 +1414,13 @@ function Library.MakeButton(config)
 	table.insert(pageButtons[page], button)
 	button.Visible = activePage == page
 	connect(button.MouseEnter, function()
+		if getMode() == "Studio" then
+			tween(button, 0.12, {
+				BackgroundColor3 = theme.ButtonHover,
+				BackgroundTransparency = 0,
+			})
+			return
+		end
 		tween(button, 0.12, {
 			BackgroundColor3 = theme.ButtonHover,
 			Size = hoverSize,
@@ -699,6 +1428,13 @@ function Library.MakeButton(config)
 		})
 	end)
 	connect(button.MouseLeave, function()
+		if getMode() == "Studio" then
+			tween(button, 0.12, {
+				BackgroundColor3 = Color3.fromRGB(27, 33, 45),
+				BackgroundTransparency = 0.06,
+			})
+			return
+		end
 		tween(button, 0.12, {
 			BackgroundColor3 = theme.Button,
 			Size = normalSize,
@@ -706,6 +1442,12 @@ function Library.MakeButton(config)
 		})
 	end)
 	connect(button.MouseButton1Down, function()
+		if getMode() == "Studio" then
+			tween(button, 0.07, {
+				BackgroundColor3 = theme.ButtonClick,
+			})
+			return
+		end
 		tween(button, 0.07, {
 			BackgroundColor3 = theme.ButtonClick,
 			Size = clickSize,
@@ -713,6 +1455,12 @@ function Library.MakeButton(config)
 		})
 	end)
 	connect(button.MouseButton1Up, function()
+		if getMode() == "Studio" then
+			tween(button, 0.1, {
+				BackgroundColor3 = theme.ButtonHover,
+			})
+			return
+		end
 		tween(button, 0.1, {
 			BackgroundColor3 = theme.ButtonHover,
 			Size = hoverSize,
