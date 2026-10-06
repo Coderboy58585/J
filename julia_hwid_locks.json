@@ -1,10 +1,12 @@
-{
-  "Meta": {
-    "Name": "Julia Hub HWID Lock Manifest",
-    "GeneratedAt": "2026-04-26",
-    "KeyHashAlgorithm": "SHA256(cleaned key)",
-    "HwidHashAlgorithm": "SHA256(\"JuliaHubHWID:\" .. raw HWID)",
-    "Notes": "Only key hashes and HWID hashes are stored here. Use julia_hwid_admin.ps1 to lock or reset a key."
-  },
-  "Locks": {}
+﻿{
+    "Meta":  {
+                 "Name":  "Julia Hub HWID Lock Manifest",
+                 "GeneratedAt":  "2026-10-06T21:05:40Z",
+                 "KeyHashAlgorithm":  "SHA256(cleaned key)",
+                 "HwidHashAlgorithm":  "SHA256(\"JuliaHubHWID:\" .. raw HWID)",
+                 "Notes":  "Only key hashes and HWID hashes are stored here. Use julia_hwid_admin.ps1 to lock or reset a key."
+             },
+    "Locks":  {
+
+              }
 }
